@@ -86,6 +86,10 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  // Фильтр по % изменения
+  const [minChange, setMinChange] = useState<string>('');
+  const [maxChange, setMaxChange] = useState<string>('');
+
   const fetchAlertsData = async () => {
     setLoading(true);
     try {
@@ -114,11 +118,53 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
     fetchAlertsData();
   }, [selectedAsset]);
 
-  // Автоматическое обновление каждые 10 секунд
-  useEffect(() => {
-    const interval = setInterval(fetchAlertsData, 10000);
-    return () => clearInterval(interval);
-  }, [selectedAsset]);
+  // Авто-обновление отключено - только при ручной перезагрузке
+
+  // Фильтрация по % изменения и статистика за 24 часа
+  const { filteredData, stats24h } = useMemo(() => {
+    let filtered = alertsData;
+    
+    // Фильтр по минимальному % изменения
+    if (minChange !== '') {
+      const minVal = parseFloat(minChange);
+      filtered = filtered.filter(item => 
+        item.closePrice !== null && Math.abs(item.changePercent) >= Math.abs(minVal)
+      );
+    }
+    
+    // Фильтр по максимальному % изменения
+    if (maxChange !== '') {
+      const maxVal = parseFloat(maxChange);
+      filtered = filtered.filter(item =>
+        item.closePrice !== null && Math.abs(item.changePercent) <= Math.abs(maxVal)
+      );
+    }
+    
+    // Статистика за последние 24 часа
+    const now = Date.now();
+    const dayAgo = now - 24 * 60 * 60 * 1000;
+    const records24h = alertsData.filter(item => {
+      if (item.closePrice === null) return false;
+      const marketTime = item.windowStart * 1000;
+      return marketTime >= dayAgo;
+    });
+    
+    const positive24h = records24h.filter(item => item.changePercent > 0).length;
+    const negative24h = records24h.filter(item => item.changePercent < 0).length;
+    const avgChange24h = records24h.length > 0
+      ? records24h.reduce((sum, item) => sum + item.changePercent, 0) / records24h.length
+      : 0;
+    
+    return {
+      filteredData: filtered,
+      stats24h: {
+        total: records24h.length,
+        positive: positive24h,
+        negative: negative24h,
+        avgChange: avgChange24h,
+      },
+    };
+  }, [alertsData, minChange, maxChange]);
 
   const exportCSV = () => {
     if (alertsData.length === 0) return;
@@ -201,60 +247,111 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
           </div>
           
           {/* Info and controls */}
-          <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-[#2C2C2E]">
-            <div className="flex items-center gap-3 text-sm">
-              <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+          <div className="flex flex-col gap-3 pt-4 border-t border-gray-100 dark:border-[#2C2C2E]">
+            {/* Фильтр по % изменения */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 dark:text-gray-400">Фильтр %:</span>
+                <input
+                  type="number"
+                  placeholder="Min %"
+                  value={minChange}
+                  onChange={e => setMinChange(e.target.value)}
+                  className="w-20 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#2C2C2E] text-gray-900 dark:text-white rounded-lg outline-none focus:border-[#4C7F6E]"
+                />
+                <span className="text-xs text-gray-400">-</span>
+                <input
+                  type="number"
+                  placeholder="Max %"
+                  value={maxChange}
+                  onChange={e => setMaxChange(e.target.value)}
+                  className="w-20 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#2C2C2E] text-gray-900 dark:text-white rounded-lg outline-none focus:border-[#4C7F6E]"
+                />
+                {(minChange !== '' || maxChange !== '') && (
+                  <button
+                    onClick={() => { setMinChange(''); setMaxChange(''); }}
+                    className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  >
+                    ✕ Сброс
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 ml-auto">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">Показано:</span>
+                  <span className="font-semibold text-gray-900 dark:text-white">{filteredData.length}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Статистика за 24 часа */}
+            <div className="flex flex-wrap items-center gap-4 text-xs pt-2 border-t border-gray-100 dark:border-[#2C2C2E]">
+              <div className="flex items-center gap-2">
                 <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none">
                   <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-2h2v2zm0-4H9V5h2v4z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
-                <span>{alertsData.length} рынков</span>
+                <span className="text-gray-500 dark:text-gray-400">За 24ч:</span>
               </div>
-              
               <div className="flex items-center gap-1.5">
-                <span className="relative flex w-2 h-2">
-                  <span className="animate-ping absolute inline-flex w-full h-full rounded-full bg-green-400 opacity-75" />
-                  <span className="relative inline-flex w-2 h-2 rounded-full bg-green-500" />
-                </span>
-                <span className="text-xs text-gray-400 dark:text-gray-500">
-                  Авто-обновление
-                </span>
+                <span className="text-green-600 dark:text-green-400 font-semibold">{stats24h.positive}</span>
+                <span className="text-gray-400">🟢 вверх</span>
               </div>
-              
-              {lastUpdated && (
-                <span className="text-xs text-gray-400 dark:text-gray-500">
-                  • Обновлено: {lastUpdated.toLocaleTimeString('ru-RU')}
+              <div className="flex items-center gap-1.5">
+                <span className="text-red-600 dark:text-red-400 font-semibold">{stats24h.negative}</span>
+                <span className="text-gray-400">🔴 вниз</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`font-semibold ${stats24h.avgChange > 0 ? 'text-green-600 dark:text-green-400' : stats24h.avgChange < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600'}`}>
+                  {stats24h.avgChange > 0 ? '+' : ''}{stats24h.avgChange.toFixed(2)}%
                 </span>
-              )}
+                <span className="text-gray-400">среднее</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-gray-900 dark:text-white">{stats24h.total}</span>
+                <span className="text-gray-400">всего</span>
+              </div>
             </div>
             
-            <div className="flex items-center gap-2">
-              <button
-                onClick={fetchAlertsData}
-                disabled={loading}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
-                  loading
-                    ? 'bg-gray-200 dark:bg-[#2C2C2E] text-gray-400 cursor-not-allowed'
-                    : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
-                }`}
-              >
-                <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} viewBox="0 0 16 16" fill="none">
-                  <path d="M8 2a6 6 0 106 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                  <path d="M14 2v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                {loading ? 'Загрузка...' : 'Обновить'}
-              </button>
-              
-              {alertsData.length > 0 && (
+            {/* Кнопки управления */}
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center gap-2 text-xs">
+                {lastUpdated && (
+                  <span className="text-gray-400 dark:text-gray-500">
+                    Обновлено: {lastUpdated.toLocaleTimeString('ru-RU')}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={exportCSV}
-                  className="px-3 py-1.5 text-xs font-medium text-white bg-[#4C7F6E] hover:bg-[#3D6658] rounded-lg transition-all flex items-center gap-1.5 shadow-sm hover:shadow"
+                  onClick={fetchAlertsData}
+                  disabled={loading}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
+                    loading
+                      ? 'bg-gray-200 dark:bg-[#2C2C2E] text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
+                  }`}
                 >
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none">
-                    <path d="M3 10l4 4 4-4M7 14V2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} viewBox="0 0 16 16" fill="none">
+                    <path d="M8 2a6 6 0 106 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    <path d="M14 2v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                   </svg>
-                  Экспорт CSV
+                  {loading ? 'Загрузка...' : 'Обновить'}
                 </button>
-              )}
+                
+                {filteredData.length > 0 && (
+                  <button
+                    onClick={exportCSV}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-[#4C7F6E] hover:bg-[#3D6658] rounded-lg transition-all flex items-center gap-1.5 shadow-sm hover:shadow"
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none">
+                      <path d="M3 10l4 4 4-4M7 14V2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                    Экспорт CSV
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -269,7 +366,7 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
       )}
 
       {/* Data table */}
-      {!loading && alertsData.length > 0 && (
+      {!loading && filteredData.length > 0 && (
         <div className="bg-white dark:bg-[#1C1C1E] rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -302,13 +399,13 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-[#2C2C2E]">
-                {alertsData.slice(0, 1000).map((item, index) => (
+                {filteredData.slice(0, 1000).map((item, index) => (
                   <tr 
                     key={item.id} 
                     className="hover:bg-gray-50 dark:hover:bg-[#2C2C2E]/50 transition-colors"
                   >
                     <td className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500 font-mono">
-                      {alertsData.length - index}
+                      {filteredData.length - index}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
@@ -389,12 +486,19 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
           
           <div className="px-4 py-3 border-t border-gray-100 dark:border-[#2C2C2E] bg-gray-50 dark:bg-[#1C1C1E]">
             <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-              <span>Показано {Math.min(alertsData.length, 1000)} из {alertsData.length} рынков</span>
+              <span>Показано {Math.min(filteredData.length, 1000)} из {filteredData.length} рынков</span>
               <span className="flex items-center gap-1">
-                <svg className="w-3.5 h-3.5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd"/>
-                </svg>
-                Авто-обновление каждые 10с
+                <button
+                  onClick={fetchAlertsData}
+                  disabled={loading}
+                  className="flex items-center gap-1 hover:text-green-500 transition-colors disabled:opacity-50"
+                  title="Обновить данные"
+                >
+                  <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 01-1 1a1 1 0 01-1-1v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd"/>
+                  </svg>
+                  {loading ? 'Загрузка...' : 'Обновить'}
+                </button>
               </span>
             </div>
           </div>
