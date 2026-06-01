@@ -2,27 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const SUPPORTED_SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'DOGE'];
 
-// Получаем реальную цену криптоактива с Chainlink
-async function getAssetPrice(symbol: string, timestamp: number): Promise<number> {
+// Получаем историческую цену актива с Chainlink Data Feeds
+async function getAssetPriceAtTime(symbol: string, timestamp: number): Promise<number> {
   try {
-    // Chainlink Price Feeds API
-    // Для BTC/USD: https://data.chain.link/ethereum/mainnet/crypto-usd/btc-usd
-    // Используем агрегатор Chainlink
+    // Chainlink Data Feeds через API aggregator
+    // Для BTC/USD на Ethereum mainnet: 0xb49f677943BC038e9857d61E7d053CaA2C1734C1
     
-    const symbolMap: Record<string, string> = {
-      'BTC': 'BTC/USD',
-      'ETH': 'ETH/USD',
-      'SOL': 'SOL/USD',
-      'XRP': 'XRP/USD',
-      'BNB': 'BNB/USD',
-      'DOGE': 'DOGE/USD',
+    const symbolConfig: Record<string, { feed: string; coinId: string }> = {
+      'BTC': { feed: '0xb49f677943BC038e9857d61E7d053CaA2C1734C1', coinId: 'bitcoin' },
+      'ETH': { feed: '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', coinId: 'ethereum' },
+      'SOL': { feed: '0x12660b50a8909400f34f5c4e42b9c2fe0f7c8c0e', coinId: 'solana' },
+      'XRP': { feed: '0xf297b9373794e7eb8c9d2f965a317e7215fcaa0d', coinId: 'ripple' },
+      'BNB': { feed: '0xF618a343b9AfC1BbB965A8D57365DeBb928aCf87', coinId: 'binancecoin' },
+      'DOGE': { feed: '0x745Ab4b59E8836A538491927c1Ed795908562541', coinId: 'dogecoin' },
     };
     
-    const pair = symbolMap[symbol];
-    if (!pair) return 0;
+    const config = symbolConfig[symbol];
+    if (!config) return 0;
     
-    // Chainlink Data Feeds API
-    const chainlinkUrl = `https://api.chain.link/price/v1?pair=${encodeURIComponent(pair)}&timestamp=${timestamp}`;
+    // Chainlink Price Feed API через etherscan-like endpoint
+    // Используем публичный API Chainlink
+    const chainlinkUrl = `https://api.chain.link/price/v1?pair=${symbol}/USD&timestamp=${timestamp}`;
     
     try {
       const r = await fetch(chainlinkUrl, {
@@ -36,32 +36,41 @@ async function getAssetPrice(symbol: string, timestamp: number): Promise<number>
           return parseFloat(data.data.price);
         }
       }
-    } catch {}
+    } catch (chainlinkErr) {
+      console.error(`Chainlink failed for ${symbol}:`, chainlinkErr);
+    }
     
-    // Если Chainlink не работает, пробуем альтернативу - CoinGecko
-    const coingeckoMap: Record<string, string> = {
-      'BTC': 'bitcoin',
-      'ETH': 'ethereum',
-      'SOL': 'solana',
-      'XRP': 'ripple',
-      'BNB': 'binancecoin',
-      'DOGE': 'dogecoin',
-    };
+    // Фолбэк: CoinGecko - но это текущая цена, не историческая
+    // Для исторических данных нужен платный API
+    const coingeckoUrl = `https://api.coingecko.com/api/v3/coins/${config.coinId}/market_chart?vs_currency=usd&days=1`;
     
-    const coinId = coingeckoMap[symbol];
-    if (coinId) {
-      const cgUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
-      const cgRes = await fetch(cgUrl, {
+    try {
+      const cgRes = await fetch(coingeckoUrl, {
         signal: AbortSignal.timeout(5000),
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PolymarketApp/1.0)' },
       });
       
       if (cgRes.ok) {
         const cgData = await cgRes.json();
-        if (cgData[coinId]?.usd) {
-          return cgData[coinId].usd;
+        if (cgData.prices && cgData.prices.length > 0) {
+          // Находим цену ближе всего к timestamp
+          const targetTime = timestamp * 1000;
+          let closestPrice = cgData.prices[0][1];
+          let minDiff = Math.abs(targetTime - cgData.prices[0][0]);
+          
+          for (const [time, price] of cgData.prices) {
+            const diff = Math.abs(targetTime - time);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestPrice = price;
+            }
+          }
+          
+          return closestPrice;
         }
       }
+    } catch (cgErr) {
+      console.error(`CoinGecko failed for ${symbol}:`, cgErr);
     }
     
     return 0;
@@ -71,23 +80,28 @@ async function getAssetPrice(symbol: string, timestamp: number): Promise<number>
   }
 }
 
-// Получаем только НОВЫЕ и АКТИВНЫЕ рынки с реальными ценами
+// Получаем только ЗАВЕРШЕННЫЕ рынки с реальными ценами
 async function fetchActiveMarkets(symbol: string, limit: number = 1000) {
   const records: any[] = [];
   const now = Math.floor(Date.now() / 1000);
   
-  // Проверяем окна: последние 5 прошедших + следующие 10 будущих
-  const lookBackWindows = 5;
-  const lookForwardWindows = 15;
+  // Проверяем только прошедшие окна (будущие не показываем)
+  // 500 рынков = 500 * 5 минут = ~170 часов = ~7 дней
+  // Проверяем с запасом 2x чтобы найти 500 рынков
+  const maxWindowsToCheck = limit * 2;
   
-  console.log(`Fetching ${symbol} active markets with real prices...`);
+  console.log(`Fetching ${symbol} markets, checking ${maxWindowsToCheck} windows...`);
   
+  // Начинаем с текущего окна и идем НАЗАД во времени
   const currentWindow = Math.floor(now / 300) * 300;
   
-  // Проверяем от текущего окна вперед
-  for (let i = -lookBackWindows; i < lookForwardWindows; i++) {
-    const windowStart = currentWindow + (i * 300);
+  for (let i = 0; i < maxWindowsToCheck && records.length < limit; i++) {
+    // Идем назад во времени (от текущего к прошлому)
+    const windowStart = currentWindow - (i * 300);
     const windowEnd = windowStart + 300;
+    
+    // Пропускаем если окно в будущем
+    if (windowStart >= now) continue;
     
     const slug = `${symbol.toLowerCase()}-updown-5m-${windowStart}`;
     
@@ -109,50 +123,57 @@ async function fetchActiveMarkets(symbol: string, limit: number = 1000) {
       const markets = ev.markets || [];
       if (markets.length === 0) continue;
       
-      // Получаем РЕАЛЬНУЮ цену актива на начало и конец периода
-      let openPrice = 0;
-      let closePrice: number | null = null;
+      // Определяем статус рынка по endDate
+      const endDateValue = ev.endDate;
       let isExpired = false;
       
-      try {
-        openPrice = await getAssetPrice(symbol, windowStart);
-        
-        // Определяем статус рынка
-        const endDateValue = ev.endDate;
-        
-        if (endDateValue) {
-          const endDate = new Date(endDateValue).getTime() / 1000;
-          isExpired = endDate < now;
-        }
-        
-        // Если рынок завершен, получаем цену на конец периода
-        if (isExpired && openPrice > 0) {
-          closePrice = await getAssetPrice(symbol, windowEnd);
-        }
-      } catch (priceError) {
-        console.error(`Price fetch error for ${symbol} at ${windowStart}:`, priceError);
+      if (endDateValue) {
+        const endDate = new Date(endDateValue).getTime() / 1000;
+        isExpired = endDate < now;
       }
       
+      // Если рынок еще не завершен, пропускаем его
+      if (!isExpired) continue;
+      
+      // Для КАЖДОГО рынка получаем ОТДЕЛЬНЫЕ цены
       for (const market of markets) {
+        let openPrice = 0;
+        let closePrice = 0;
+        
+        try {
+          // Цена открытия = цена актива НА НАЧАЛО периода
+          openPrice = await getAssetPriceAtTime(symbol, windowStart);
+          
+          // Цена закрытия = цена актива НА КОНЕЦ периода
+          closePrice = await getAssetPriceAtTime(symbol, windowEnd);
+        } catch (priceError) {
+          console.error(`Price fetch error for ${symbol} at ${windowStart}:`, priceError);
+        }
+        
         records.push({
           id: market.id || `${symbol}-${windowStart}`,
           symbol,
           timeframe: '5min',
-          openPrice,  // РЕАЛЬНАЯ цена актива на начало периода
-          closePrice, // РЕАЛЬНАЯ цена актива на конец периода (для завершенных)
-          changePercent: (openPrice > 0 && closePrice !== null) ? ((closePrice - openPrice) / openPrice) * 100 : 0,
+          openPrice,
+          closePrice,
+          changePercent: (openPrice > 0 && closePrice > 0) ? ((closePrice - openPrice) / openPrice) * 100 : 0,
           marketTitle: market.question || ev.title || `${symbol} 5m`,
           slug: market.slug || ev.slug,
           marketUrl: `https://polymarket.com/event/${market.slug || ev.slug}`,
           windowStart,
           windowEnd,
-          isExpired,
+          isExpired: true,
           createdAt: new Date(windowStart * 1000).toISOString(),
           volume: market.liquidity || ev.liquidity || 0,
         });
       }
     } catch (error) {
       console.error(`Error fetching ${symbol} market at ${windowStart}:`, error);
+    }
+    
+    // Небольшая задержка чтобы не перегружать API
+    if (i % 100 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
   
