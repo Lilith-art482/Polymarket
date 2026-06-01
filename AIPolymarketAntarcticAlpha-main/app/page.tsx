@@ -80,6 +80,325 @@ const fetcher = async (params: Params) => {
   return res.json();
 };
 
+function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
+  const [selectedAsset, setSelectedAsset] = useState<string>('BTC');
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string>('5min');
+  const [alertsData, setAlertsData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const timeframeOptions: SelectOption[] = [
+    { value: '5min', label: '5m' },
+    { value: '15min', label: '15m' },
+  ];
+
+  const fetchAlertsData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/alerts-data?symbol=${selectedAsset}&timeframe=${selectedTimeframe}&limit=1000`
+      );
+      const data = await res.json();
+      if (data.data) {
+        setAlertsData(data.data);
+        setLastUpdated(new Date());
+      }
+    } catch (error) {
+      console.error('Failed to fetch alerts data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAlertsData();
+  }, [selectedAsset, selectedTimeframe]);
+
+  // Автоматическое обновление каждые 30 секунд
+  useEffect(() => {
+    const interval = setInterval(fetchAlertsData, 30000);
+    return () => clearInterval(interval);
+  }, [selectedAsset, selectedTimeframe]);
+
+  const exportCSV = () => {
+    if (alertsData.length === 0) return;
+    
+    const headers = ['Время рынка', 'Актив', 'Цена открытия', 'Цена закрытия', '% изменения', 'URL рынка', 'Статус'];
+    const rows = alertsData.map(item => [
+      new Date(item.windowStart * 1000).toLocaleString('ru-RU'),
+      item.symbol,
+      item.openPrice.toFixed(4),
+      item.closePrice.toFixed(4),
+      item.changePercent.toFixed(2) + '%',
+      item.marketUrl,
+      item.isExpired ? 'Завершен' : 'Активен',
+    ]);
+    
+    const bom = '\uFEFF';
+    const csv = bom + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `alerts-${selectedAsset}-${selectedTimeframe}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const getChangeColor = (change: number) => {
+    if (change > 0) return 'text-green-600 dark:text-green-400';
+    if (change < 0) return 'text-red-600 dark:text-red-400';
+    return 'text-gray-600 dark:text-gray-400';
+  };
+
+  const getChangeBg = (change: number) => {
+    if (change > 0) return 'bg-green-50 dark:bg-green-900/20';
+    if (change < 0) return 'bg-red-50 dark:bg-red-900/20';
+    return 'bg-gray-50 dark:bg-gray-800';
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header with selectors */}
+      <div className="bg-white dark:bg-[#1C1C1E] p-5 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div className="flex-1">
+            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">
+              Актив
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {assetOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSelectedAsset(opt.value)}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${
+                    selectedAsset === opt.value
+                      ? 'bg-[#4C7F6E] text-white shadow-sm'
+                      : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
+                  }`}
+                >
+                  {opt.icon}
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="md:w-48">
+            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">
+              Таймфрейм
+            </label>
+            <CustomSelect
+              options={timeframeOptions}
+              value={selectedTimeframe}
+              onChange={setSelectedTimeframe}
+              placeholder="Выберите TF"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100 dark:border-[#2C2C2E]">
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none">
+              <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-2h2v2zm0-4H9V5h2v4z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            {alertsData.length} рынков
+            {lastUpdated && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                • Обновлено: {lastUpdated.toLocaleTimeString('ru-RU')}
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={fetchAlertsData}
+              disabled={loading}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
+                loading
+                  ? 'bg-gray-200 dark:bg-[#2C2C2E] text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
+              }`}
+            >
+              <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} viewBox="0 0 16 16" fill="none">
+                <path d="M8 2a6 6 0 106 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <path d="M14 2v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              {loading ? 'Загрузка...' : 'Обновить'}
+            </button>
+            
+            {alertsData.length > 0 && (
+              <button
+                onClick={exportCSV}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-[#4C7F6E] hover:bg-[#3D6658] rounded-lg transition-all flex items-center gap-1.5 shadow-sm hover:shadow"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 10l4 4 4-4M7 14V2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                Экспорт CSV
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Loading state */}
+      {loading && alertsData.length === 0 && (
+        <div className="bg-white dark:bg-[#1C1C1E] p-12 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm flex flex-col items-center justify-center">
+          <div className="w-12 h-12 border-4 border-[#4C7F6E]/20 border-t-[#4C7F6E] rounded-full animate-spin mb-4" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Загрузка данных рынков...</p>
+        </div>
+      )}
+
+      {/* Data table */}
+      {!loading && alertsData.length > 0 && (
+        <div className="bg-white dark:bg-[#1C1C1E] rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 dark:border-[#2C2C2E] bg-gray-50 dark:bg-[#1C1C1E]">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    №
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Время рынка
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Актив
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Цена открытия
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Цена закрытия
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    % изменения
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Статус
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Действия
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-[#2C2C2E]">
+                {alertsData.slice(0, 1000).map((item, index) => (
+                  <tr 
+                    key={item.id} 
+                    className="hover:bg-gray-50 dark:hover:bg-[#2C2C2E]/50 transition-colors"
+                  >
+                    <td className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500 font-mono">
+                      {alertsData.length - index}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5 text-gray-400" viewBox="0 0 20 20" fill="none">
+                          <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M10 6v4l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                        <span className="text-xs text-gray-600 dark:text-gray-300">
+                          {new Date(item.windowStart * 1000).toLocaleString('ru-RU', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-[#2C2C2E] text-gray-900 dark:text-white">
+                        <Image
+                          src={`/${item.symbol.toLowerCase()}.webp`}
+                          alt={item.symbol}
+                          width={14}
+                          height={14}
+                          className="w-3.5 h-3.5"
+                        />
+                        {item.symbol}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-gray-700 dark:text-gray-300">
+                      {item.openPrice.toFixed(4)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-gray-900 dark:text-white">
+                      {item.closePrice.toFixed(4)}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${getChangeBg(item.changePercent)} ${getChangeColor(item.changePercent)}`}>
+                        {item.changePercent > 0 ? '↑' : item.changePercent < 0 ? '↓' : '−'} 
+                        {Math.abs(item.changePercent).toFixed(2)}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {item.isExpired ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400">
+                          ✓ Завершен
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                          Активен
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <a
+                        href={item.marketUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-[#4C7F6E] hover:bg-[#3D6658] rounded-lg transition-colors shadow-sm"
+                      >
+                        <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none">
+                          <path d="M10 3h3v3M13 3L7 9M6 4H4a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1v-2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        Polymarket
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="px-4 py-3 border-t border-gray-100 dark:border-[#2C2C2E] bg-gray-50 dark:bg-[#1C1C1E]">
+            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+              <span>Показано {Math.min(alertsData.length, 1000)} из {alertsData.length} рынков</span>
+              <span className="flex items-center gap-1">
+                <svg className="w-3.5 h-3.5 text-[#4C7F6E]" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd"/>
+                </svg>
+                Авто-обновление каждые 30с
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && alertsData.length === 0 && (
+        <div className="bg-white dark:bg-[#1C1C1E] p-12 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm flex flex-col items-center justify-center">
+          <div className="w-16 h-16 bg-gray-100 dark:bg-[#2C2C2E] rounded-2xl flex items-center justify-center mb-4">
+            <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M9 17h6M10 9l2-2 2 2M5 13a7 7 0 1114 0v4a2 2 0 01-2 2H7a2 2 0 01-2-2v-4z"/>
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            Нет данных о рынках
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center max-w-md">
+            Данные загружаются с Polymarket API. Это может занять несколько секунд при первой загрузке.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const { user } = useAuth();
   const userId = user?.uid || '';
@@ -343,16 +662,7 @@ export default function Home() {
         </div>
 
         {activeTab === 'alerts' ? (
-          <div className="flex flex-col items-center justify-center py-24 bg-white dark:bg-[#1C1C1E] rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm">
-            <div className="w-16 h-16 bg-[#4C7F6E]/10 rounded-2xl flex items-center justify-center mb-4">
-              <svg className="w-8 h-8 text-[#4C7F6E]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M12 2a2 2 0 012 2v2.17A3 3 0 0117 9v6a3 3 0 01-3 3H6a3 3 0 01-3-3V9a3 3 0 013-3V4a2 2 0 012-2h4z"/>
-                <path d="M9 21h6"/>
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Alerts</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">В разработке</p>
-          </div>
+          <AlertsTab assetOptions={assetOptions} />
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
