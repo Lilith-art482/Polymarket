@@ -124,15 +124,23 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
     if (alertsData.length === 0) return;
     
     const headers = ['Время рынка', 'Актив', 'Цена открытия', 'Цена закрытия', '% изменения', 'URL рынка', 'Статус'];
-    const rows = alertsData.map(item => [
-      new Date(item.windowStart * 1000).toLocaleString('ru-RU'),
-      item.symbol,
-      item.openPrice.toFixed(4),
-      item.closePrice !== null ? item.closePrice.toFixed(4) : '-',
-      item.changePercent.toFixed(2) + '%',
-      item.marketUrl,
-      item.isExpired ? 'Завершен' : 'Активен',
-    ]);
+    const rows = alertsData.map(item => {
+      // Для активных рынков: цена открытия = текущая цена
+      // Для завершенных: цена открытия = цена когда рынок создался, цена закрытия = 0 или 1
+      const openPrice = item.openPrice;
+      const closePrice = item.closePrice !== null ? item.closePrice.toFixed(4) : 'Активен';
+      const changePercent = item.closePrice !== null ? item.changePercent.toFixed(2) : '—';
+      
+      return [
+        new Date(item.windowStart * 1000).toLocaleString('ru-RU'),
+        item.symbol,
+        openPrice.toFixed(4),
+        closePrice,
+        changePercent + '%',
+        item.marketUrl,
+        item.isExpired ? 'Завершен' : 'Активен',
+      ];
+    });
     
     const bom = '\uFEFF';
     const csv = bom + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
@@ -343,8 +351,8 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                           {Math.abs(item.changePercent).toFixed(2)}%
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800">
-                          —
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20">
+                          Торг
                         </span>
                       )}
                     </td>

@@ -2,22 +2,94 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const SUPPORTED_SYMBOLS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'DOGE'];
 
-// Получаем все рынки для символа (активные и недавние завершенные)
-async function fetchSymbolMarkets(symbol: string, limit: number = 1000) {
+// Получаем реальную цену криптоактива с Chainlink
+async function getAssetPrice(symbol: string, timestamp: number): Promise<number> {
+  try {
+    // Chainlink Price Feeds API
+    // Для BTC/USD: https://data.chain.link/ethereum/mainnet/crypto-usd/btc-usd
+    // Используем агрегатор Chainlink
+    
+    const symbolMap: Record<string, string> = {
+      'BTC': 'BTC/USD',
+      'ETH': 'ETH/USD',
+      'SOL': 'SOL/USD',
+      'XRP': 'XRP/USD',
+      'BNB': 'BNB/USD',
+      'DOGE': 'DOGE/USD',
+    };
+    
+    const pair = symbolMap[symbol];
+    if (!pair) return 0;
+    
+    // Chainlink Data Feeds API
+    const chainlinkUrl = `https://api.chain.link/price/v1?pair=${encodeURIComponent(pair)}&timestamp=${timestamp}`;
+    
+    try {
+      const r = await fetch(chainlinkUrl, {
+        signal: AbortSignal.timeout(5000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PolymarketApp/1.0)' },
+      });
+      
+      if (r.ok) {
+        const data = await r.json();
+        if (data.data?.price) {
+          return parseFloat(data.data.price);
+        }
+      }
+    } catch {}
+    
+    // Если Chainlink не работает, пробуем альтернативу - CoinGecko
+    const coingeckoMap: Record<string, string> = {
+      'BTC': 'bitcoin',
+      'ETH': 'ethereum',
+      'SOL': 'solana',
+      'XRP': 'ripple',
+      'BNB': 'binancecoin',
+      'DOGE': 'dogecoin',
+    };
+    
+    const coinId = coingeckoMap[symbol];
+    if (coinId) {
+      const cgUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
+      const cgRes = await fetch(cgUrl, {
+        signal: AbortSignal.timeout(5000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PolymarketApp/1.0)' },
+      });
+      
+      if (cgRes.ok) {
+        const cgData = await cgRes.json();
+        if (cgData[coinId]?.usd) {
+          return cgData[coinId].usd;
+        }
+      }
+    }
+    
+    return 0;
+  } catch (error) {
+    console.error(`Error fetching price for ${symbol}:`, error);
+    return 0;
+  }
+}
+
+// Получаем только НОВЫЕ и АКТИВНЫЕ рынки с реальными ценами
+async function fetchActiveMarkets(symbol: string, limit: number = 1000) {
   const records: any[] = [];
   const now = Math.floor(Date.now() / 1000);
   
-  // Проверяем последние 2000 временных окон (примерно 7 дней по 5 минут)
-  const maxWindows = Math.min(limit * 2, 2000);
+  // Проверяем окна: последние 5 прошедших + следующие 10 будущих
+  const lookBackWindows = 5;
+  const lookForwardWindows = 15;
   
-  console.log(`Fetching ${symbol} markets, checking ${maxWindows} windows...`);
+  console.log(`Fetching ${symbol} active markets with real prices...`);
   
-  for (let i = 0; i < maxWindows && records.length < limit; i++) {
-    // Идем от настоящеого времени назад
-    const windowStart = now - (i * 300);
-    const alignedWindow = Math.floor(windowStart / 300) * 300;
+  const currentWindow = Math.floor(now / 300) * 300;
+  
+  // Проверяем от текущего окна вперед
+  for (let i = -lookBackWindows; i < lookForwardWindows; i++) {
+    const windowStart = currentWindow + (i * 300);
+    const windowEnd = windowStart + 300;
     
-    const slug = `${symbol.toLowerCase()}-updown-5m-${alignedWindow}`;
+    const slug = `${symbol.toLowerCase()}-updown-5m-${windowStart}`;
     
     try {
       const r = await fetch(
@@ -35,99 +107,53 @@ async function fetchSymbolMarkets(symbol: string, limit: number = 1000) {
       
       const ev = list[0];
       const markets = ev.markets || [];
+      if (markets.length === 0) continue;
       
-      for (const market of markets) {
-        const marketId = market.id || market.slug;
-        
-        // Получаем текущие цены через bestOffers
-        let currentPrice = 0.5;
-        let closePrice: number | null = null;
-        
-        // Пытаемся получить цену из outcomePrices
-        if (market.outcomePrices) {
-          try {
-            const prices = JSON.parse(market.outcomePrices);
-            if (Array.isArray(prices) && prices.length > 0) {
-              currentPrice = parseFloat(prices[0]) || 0.5;
-            }
-          } catch {}
-        }
-        
-        // Если есть bestOffers
-        if (market.bestBid && market.bestAsk) {
-          currentPrice = (parseFloat(market.bestBid) + parseFloat(market.bestAsk)) / 2;
-        } else if (market.bestBid) {
-          currentPrice = parseFloat(market.bestBid);
-        } else if (market.lastTradePrice) {
-          currentPrice = parseFloat(market.lastTradePrice);
-        }
+      // Получаем РЕАЛЬНУЮ цену актива на начало и конец периода
+      let openPrice = 0;
+      let closePrice: number | null = null;
+      let isExpired = false;
+      
+      try {
+        openPrice = await getAssetPrice(symbol, windowStart);
         
         // Определяем статус рынка
-        const endDateValue = market.endDate || ev.endDate;
-        let isExpired = false;
+        const endDateValue = ev.endDate;
         
         if (endDateValue) {
           const endDate = new Date(endDateValue).getTime() / 1000;
           isExpired = endDate < now;
         }
         
-        // Для завершенных рынков пытаемся получить финальный результат
-        if (isExpired && market.conditionId) {
-          // Рынок завершен - цена будет 0 или 1
-          // Пытаемся получить результат
-          try {
-            const eventsR = await fetch(
-              `https://gamma-api.polymarket.com/events/${ev.slug}`,
-              {
-                signal: AbortSignal.timeout(3000),
-                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PolymarketApp/1.0)' },
-              }
-            );
-            
-            if (eventsR.ok) {
-              const eventData = await eventsR.json();
-              if (eventData.closed || eventData.resolved) {
-                // Определяем результат по conditionId
-                closePrice = eventData.conditionId ? 1 : 0;
-              }
-            }
-          } catch {
-            // Если не удалось получить результат, используем текущую цену
-            closePrice = currentPrice;
-          }
-        } else if (market.closed || market.resolved) {
-          // Рынок помечен как закрытый
-          closePrice = currentPrice;
+        // Если рынок завершен, получаем цену на конец периода
+        if (isExpired && openPrice > 0) {
+          closePrice = await getAssetPrice(symbol, windowEnd);
         }
-        
-        // Цена открытия всегда 0.5 для новых рынков
-        const openPrice = 0.5;
-        
+      } catch (priceError) {
+        console.error(`Price fetch error for ${symbol} at ${windowStart}:`, priceError);
+      }
+      
+      for (const market of markets) {
         records.push({
-          id: market.id || `${symbol}-${alignedWindow}`,
+          id: market.id || `${symbol}-${windowStart}`,
           symbol,
           timeframe: '5min',
-          openPrice,
-          closePrice,
-          currentPrice,
-          changePercent: closePrice !== null ? ((closePrice - openPrice) / openPrice) * 100 : 0,
+          openPrice,  // РЕАЛЬНАЯ цена актива на начало периода
+          closePrice, // РЕАЛЬНАЯ цена актива на конец периода (для завершенных)
+          changePercent: (openPrice > 0 && closePrice !== null) ? ((closePrice - openPrice) / openPrice) * 100 : 0,
           marketTitle: market.question || ev.title || `${symbol} 5m`,
           slug: market.slug || ev.slug,
           marketUrl: `https://polymarket.com/event/${market.slug || ev.slug}`,
-          windowStart: alignedWindow,
-          windowEnd: alignedWindow + 300,
+          windowStart,
+          windowEnd,
           isExpired,
-          createdAt: new Date(alignedWindow * 1000).toISOString(),
+          createdAt: new Date(windowStart * 1000).toISOString(),
           volume: market.liquidity || ev.liquidity || 0,
-          lastTradePrice: market.lastTradePrice || null,
         });
       }
     } catch (error) {
-      console.error(`Error fetching ${symbol} market at ${alignedWindow}:`, error);
+      console.error(`Error fetching ${symbol} market at ${windowStart}:`, error);
     }
-    
-    // Пропускаем слишком старые рынки (больше 7 дней)
-    if (i > 2000) break;
   }
   
   return records;
@@ -147,7 +173,7 @@ export async function GET(req: NextRequest) {
 
   try {
     console.log(`Fetching markets for ${symbol}, limit: ${limit}`);
-    const records = await fetchSymbolMarkets(symbol, limit);
+    const records = await fetchActiveMarkets(symbol, limit);
     
     // Сортируем по времени (сначала новые)
     records.sort((a, b) => b.windowStart - a.windowStart);
