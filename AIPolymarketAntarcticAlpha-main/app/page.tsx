@@ -163,12 +163,12 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
           {alerts.map((alert) => (
             <div
               key={alert.id}
-              className="bg-white dark:bg-[#1C1C1E] p-4 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm hover:shadow-md transition-all"
+              className="bg-white dark:bg-[#1C1C1E] p-5 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm hover:shadow-lg transition-all"
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-4">
                 {/* Icon */}
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${getVerdictColor(alert.verdict)}`}>
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${getVerdictColor(alert.verdict)}`}>
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     {alert.verdict === 'UP' ? (
                       <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round"/>
                     ) : alert.verdict === 'DOWN' ? (
@@ -181,80 +181,93 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-[#2C2C2E] text-gray-900 dark:text-white">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-[#2C2C2E] text-gray-900 dark:text-white">
                       <Image
                         src={`/${alert.symbol.toLowerCase()}.webp`}
                         alt={alert.symbol}
-                        width={12}
-                        height={12}
-                        className="w-3 h-3"
+                        width={16}
+                        height={16}
+                        className="w-4 h-4"
                       />
                       {alert.symbol}
                     </span>
                     <span className="text-xs text-gray-500 dark:text-gray-400">5m</span>
                     <span className="text-xs text-gray-400">•</span>
-                    <span className={`text-xs font-semibold ${getAgreementColor(alert.agreementCount)}`}>
-                      {alert.agreementCount}/8 индикаторов
+                    <span className={`text-sm font-bold ${getAgreementColor(alert.agreementCount)}`}>
+                      {alert.agreementCount}/8 индикаторов согласны
+                    </span>
+                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                      Уверенность: {alert.confidence.toFixed(0)}%
                     </span>
                   </div>
 
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2 truncate">
+                  {/* Title */}
+                  <h3 className="text-base font-medium text-gray-900 dark:text-white mb-3 line-clamp-2">
                     {alert.marketTitle}
                   </h3>
 
-                  <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-                    <div className="flex items-center gap-1">
-                      <span>Цена:</span>
-                      <span className="font-mono text-gray-900 dark:text-white">${alert.price.toFixed(2)}</span>
+                  {/* Price info */}
+                  <div className="flex items-center gap-4 text-sm mb-3 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-500 dark:text-gray-400">Цена:</span>
+                      <span className="font-mono font-semibold text-gray-900 dark:text-white">${alert.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <span>Изм:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-500 dark:text-gray-400">24ч:</span>
                       <span className={`font-semibold ${alert.changePercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {alert.changePercent >= 0 ? '+' : ''}{alert.changePercent.toFixed(2)}%
                       </span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <span>Уверенность:</span>
-                      <span className="font-semibold text-gray-900 dark:text-white">{alert.confidence.toFixed(0)}%</span>
-                    </div>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-auto">
+                      {new Date(alert.timestamp).toLocaleTimeString('ru-RU', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                      })}
+                    </span>
                   </div>
 
-                  {/* Indicators preview */}
-                  <div className="flex flex-wrap gap-1 mt-3">
-                    {alert.indicators.slice(0, 4).map((ind: any, idx: number) => (
-                      <span
+                  {/* Indicators grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    {alert.indicators.map((ind: any, idx: number) => (
+                      <div
                         key={idx}
-                        className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                        className={`px-2.5 py-2 rounded-lg text-xs ${
                           ind.verdict === 'UP'
-                            ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
                             : ind.verdict === 'DOWN'
-                            ? 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400'
-                            : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-600 dark:text-gray-400'
+                            ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                            : 'bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-gray-700'
                         }`}
                       >
-                        {ind.name}: {ind.value}
-                      </span>
+                        <div className={`font-semibold mb-0.5 ${
+                          ind.verdict === 'UP'
+                            ? 'text-green-700 dark:text-green-400'
+                            : ind.verdict === 'DOWN'
+                            ? 'text-red-700 dark:text-red-400'
+                            : 'text-gray-600 dark:text-gray-400'
+                        }`}>
+                          {ind.name}
+                        </div>
+                        <div className="font-mono text-gray-900 dark:text-white">
+                          {ind.value}
+                        </div>
+                      </div>
                     ))}
-                    {alert.indicators.length > 4 && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-[#2C2C2E] text-gray-500 dark:text-gray-400">
-                        +{alert.indicators.length - 4} ещё
-                      </span>
-                    )}
                   </div>
 
-                  {/* Signal details on hover */}
-                  {alert.signalDetails && alert.signalDetails.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-gray-100 dark:border-[#2C2C2E]">
-                      <div className="flex flex-wrap gap-1">
-                        {alert.signalDetails.slice(0, 3).map((detail: string, idx: number) => (
-                          <span key={idx} className="text-[10px] text-gray-500 dark:text-gray-400">
-                            {detail}
-                          </span>
-                        ))}
-                      </div>
+                  {/* Signal details */}
+                  <div className="pt-3 border-t border-gray-100 dark:border-[#2C2C2E]">
+                    <div className="flex flex-wrap gap-2">
+                      {alert.signalDetails.map((detail: string, idx: number) => (
+                        <span key={idx} className="text-xs text-gray-600 dark:text-gray-400">
+                          {detail}
+                        </span>
+                      ))}
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Actions */}
@@ -263,17 +276,14 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                     href={alert.marketUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-[#4C7F6E] hover:bg-[#3D6658] rounded-lg transition-colors shrink-0"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[#4C7F6E] hover:bg-[#3D6658] rounded-xl transition-all shrink-0 shadow-sm hover:shadow"
                   >
-                    Polymarket ↗
+                    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M8 4v8M4 8h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                    Polymarket
                   </a>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 text-right">
-                    {new Date(alert.timestamp).toLocaleTimeString('ru-RU', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                    })}
-                  </span>
                 </div>
               </div>
             </div>

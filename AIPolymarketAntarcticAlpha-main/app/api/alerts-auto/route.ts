@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { calcIndicators, evaluateSignal, OHLCV } from '@/lib/indicators';
+import { calcIndicators, evaluateSignal } from '@/lib/indicators';
 import { fetchOHLCV } from '@/lib/mexc';
 
 const ASSETS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'DOGE'];
@@ -10,7 +10,7 @@ interface Market {
   id: string;
   title: string;
   url: string;
-  endDate: string;
+  slug: string;
 }
 
 interface AlertData {
@@ -25,7 +25,7 @@ interface AlertData {
   confidence: number;
   indicators: {
     name: string;
-    value: number | string;
+    value: string;
     verdict: 'UP' | 'DOWN' | 'NEUTRAL';
   }[];
   agreementCount: number;
@@ -34,33 +34,63 @@ interface AlertData {
   signalDetails: string[];
 }
 
+function floorTime(ts: number, step: number): number {
+  return ts - (ts % step);
+}
+
 async function fetchMarkets(symbol: string): Promise<Market[]> {
-  try {
-    const response = await globalThis.fetch(
-      `https://gamma-api.polymarket.com/events?active=true&limit=100`
-    );
-    const data = await response.json();
-    
-    return (data || [])
-      .filter((ev: any) => {
-        const title = (ev.title || '').toLowerCase();
-        const question = (ev.question || '').toLowerCase();
-        return title.includes(symbol.toLowerCase()) || question.includes(symbol.toLowerCase());
-      })
-      .slice(0, 10)
-      .map((ev: any) => {
-        const market = ev.markets?.[0] || {};
-        return {
-          id: market.id || ev.id || '',
-          title: market.title || ev.title || '',
-          url: `https://polymarket.com/ru/event/${ev.slug || ev.id}`,
-          endDate: market.endDate || ev.endDate || new Date().toISOString(),
-        };
-      });
-  } catch (error) {
-    console.error(`Failed to fetch markets for ${symbol}:`, error);
-    return [];
+  const INTERVALS: Record<string, { step: number; label: string }> = {
+    '5min': { step: 300, label: '5m' },
+  };
+  
+  const intv = INTERVALS[TIMEFRAME];
+  const now = Math.floor(Date.now() / 1000);
+  const baseStart = floorTime(now, intv.step);
+  const sym = symbol.toLowerCase();
+  const results: Market[] = [];
+  const seen = new Set<string>();
+
+  // Try current window + next 2 windows
+  for (let i = 0; i < 3; i++) {
+    const windowStart = baseStart + i * intv.step;
+    const slug = `${sym}-updown-${intv.label}-${windowStart}`;
+
+    try {
+      const r = await fetch(
+        `https://gamma-api.polymarket.com/events?slug=${encodeURIComponent(slug)}`,
+        {
+          signal: AbortSignal.timeout(5000),
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PolymarketApp/1.0)' },
+        }
+      );
+      if (!r.ok) continue;
+      const data = await r.json();
+      const list = Array.isArray(data) ? data : [];
+      if (list.length === 0) continue;
+
+      const ev = list[0];
+      const eventSlug = ev.slug || slug;
+      const url = `https://polymarket.com/ru/event/${eventSlug}`;
+
+      for (const m of ev.markets || []) {
+        const id = String(m.id || '');
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        results.push({
+          id,
+          title: m.title || m.question || ev.title || '',
+          slug: m.slug || eventSlug,
+          url,
+        });
+        if (results.length >= 5) break;
+      }
+      if (results.length > 0) break;
+    } catch (error) {
+      console.error(`Error fetching markets for ${slug}:`, error);
+    }
   }
+
+  return results;
 }
 
 async function fetchPrice(symbol: string): Promise<{ price: number; changePercent: number }> {
@@ -100,48 +130,39 @@ async function analyzeAsset(symbol: string): Promise<AlertData[]> {
     // Получаем цену и изменение
     const priceData = await fetchPrice(symbol);
     
-    // Получаем рынки Polymarket
+    // Получаем рынки Polymarket (как в Direct Query)
     const markets = await fetchMarkets(symbol);
     
     const alerts: AlertData[] = [];
     
     for (const market of markets) {
-      const endDate = new Date(market.endDate).getTime();
-      const now = Date.now();
-      const timeUntilEnd = endDate - now;
-      
-      // Проверяем за 45 секунд до окончания или меньше часа
-      const isCriticalTime = timeUntilEnd > 0 && timeUntilEnd <= 45000;
-      
-      if (isCriticalTime || timeUntilEnd < 3600000) {
-        // Проверяем порог соглашения (5+ индикаторов)
-        if (signal.positiveCount >= MIN_AGREEMENT) {
-          alerts.push({
-            id: `${symbol}-${market.id}-${Date.now()}`,
-            timestamp: now,
-            symbol,
-            timeframe: TIMEFRAME,
-            marketId: market.id,
-            marketTitle: market.title,
-            marketUrl: market.url,
-            verdict: signal.verdict as 'UP' | 'DOWN' | 'NEUTRAL',
-            confidence: (signal.positiveCount / 8) * 100,
-            indicators: [
-              { name: 'RSI', value: ind.rsi.toFixed(1), verdict: ind.rsi < 35 ? 'UP' : ind.rsi > 65 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-              { name: 'MACD', value: ind.macdHist.toFixed(4), verdict: ind.macdHist > 0 ? 'UP' : ind.macdHist < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-              { name: 'EMA9', value: ind.ema9.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-              { name: 'EMA21', value: ind.ema21.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-              { name: 'VWAP', value: ind.vwap.toFixed(2), verdict: ind.price > ind.vwap ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-              { name: 'BB %B', value: ind.bbPercentB.toFixed(2), verdict: ind.bbPercentB < 0.2 ? 'UP' : ind.bbPercentB > 0.8 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-              { name: 'ADX', value: ind.adx.toFixed(0), verdict: ind.adx > 20 && ind.plusDI > ind.minusDI ? 'UP' : ind.adx > 20 && ind.minusDI > ind.plusDI ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-              { name: 'OBV', value: ind.obvSlope.toFixed(0), verdict: ind.obvSlope > 0 ? 'UP' : ind.obvSlope < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-            ],
-            agreementCount: signal.positiveCount,
-            price: priceData.price,
-            changePercent: priceData.changePercent,
-            signalDetails: Object.values(signal.details),
-          });
-        }
+      // Проверяем порог соглашения (5+ индикаторов)
+      if (signal.positiveCount >= MIN_AGREEMENT) {
+        alerts.push({
+          id: `${symbol}-${market.id}-${Date.now()}`,
+          timestamp: Date.now(),
+          symbol,
+          timeframe: TIMEFRAME,
+          marketId: market.id,
+          marketTitle: market.title,
+          marketUrl: market.url,
+          verdict: signal.verdict as 'UP' | 'DOWN' | 'NEUTRAL',
+          confidence: (signal.positiveCount / 8) * 100,
+          indicators: [
+            { name: 'RSI', value: ind.rsi.toFixed(1), verdict: ind.rsi < 35 ? 'UP' : ind.rsi > 65 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+            { name: 'MACD', value: ind.macdHist.toFixed(4), verdict: ind.macdHist > 0 ? 'UP' : ind.macdHist < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+            { name: 'EMA9', value: ind.ema9.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
+            { name: 'EMA21', value: ind.ema21.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
+            { name: 'VWAP', value: ind.vwap.toFixed(2), verdict: ind.price > ind.vwap ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
+            { name: 'BB %B', value: ind.bbPercentB.toFixed(2), verdict: ind.bbPercentB < 0.2 ? 'UP' : ind.bbPercentB > 0.8 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+            { name: 'ADX', value: ind.adx.toFixed(0), verdict: ind.adx > 20 && ind.plusDI > ind.minusDI ? 'UP' : ind.adx > 20 && ind.minusDI > ind.plusDI ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+            { name: 'OBV', value: ind.obvSlope.toFixed(0), verdict: ind.obvSlope > 0 ? 'UP' : ind.obvSlope < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+          ],
+          agreementCount: signal.positiveCount,
+          price: priceData.price,
+          changePercent: priceData.changePercent,
+          signalDetails: Object.values(signal.details),
+        });
       }
     }
     
