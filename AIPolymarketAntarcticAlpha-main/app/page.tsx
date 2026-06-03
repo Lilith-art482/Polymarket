@@ -10,6 +10,280 @@ import { useT } from '@/lib/useT';
 import { useAuth } from '@/app/providers';
 import { saveAnalysis, subscribeHistory, cleanupHistory, cleanupOldHistory, deleteAnalysis, type AnalysisDoc } from '@/lib/firebase';
 
+function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
+  const [selectedAsset, setSelectedAsset] = useState<string>('ALL');
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const fetchAlerts = async () => {
+    setLoading(true);
+    try {
+      const symbol = selectedAsset === 'ALL' ? 'ALL' : selectedAsset;
+      const res = await fetch(`/api/alerts-auto?symbol=${symbol}`);
+      const data = await res.json();
+      
+      if (data.success && data.data) {
+        setAlerts(data.data);
+        setLastUpdated(new Date());
+      }
+    } catch (error) {
+      console.error('Failed to fetch alerts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAlerts();
+  }, [selectedAsset]);
+
+  // Авто-обновление каждые 30 секунд
+  useEffect(() => {
+    if (!autoRefresh) return;
+    
+    const interval = setInterval(() => {
+      fetchAlerts();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [autoRefresh]);
+
+  const getVerdictColor = (verdict: string) => {
+    switch (verdict) {
+      case 'UP': return 'bg-green-500 text-white';
+      case 'DOWN': return 'bg-red-500 text-white';
+      default: return 'bg-gray-500 text-white';
+    }
+  };
+
+  const getAgreementColor = (count: number) => {
+    if (count >= 7) return 'text-green-600 dark:text-green-400';
+    if (count >= 5) return 'text-yellow-600 dark:text-yellow-400';
+    return 'text-gray-600 dark:text-gray-400';
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="bg-white dark:bg-[#1C1C1E] p-5 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            🚨 Автоматические алерты
+          </h2>
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
+              autoRefresh
+                ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-600 dark:text-gray-400'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+            {autoRefresh ? 'Авто: Вкл' : 'Авто: Выкл'}
+          </button>
+        </div>
+
+        {/* Asset filter */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button
+            onClick={() => setSelectedAsset('ALL')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              selectedAsset === 'ALL'
+                ? 'bg-[#4C7F6E] text-white'
+                : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
+            }`}
+          >
+            ВСЕ
+          </button>
+          {assetOptions.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setSelectedAsset(opt.value)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                selectedAsset === opt.value
+                  ? 'bg-[#4C7F6E] text-white'
+                  : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
+              }`}
+            >
+              {opt.icon}
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Info */}
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+            <span>Показано: <strong className="text-gray-900 dark:text-white">{alerts.length}</strong></span>
+            {lastUpdated && (
+              <>
+                <span>•</span>
+                <span>Обновлено: {lastUpdated.toLocaleTimeString('ru-RU')}</span>
+              </>
+            )}
+          </div>
+          <button
+            onClick={fetchAlerts}
+            disabled={loading}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-[#3C3C3E] transition-all disabled:opacity-50"
+          >
+            <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} viewBox="0 0 16 16" fill="none">
+              <path d="M8 2a6 6 0 106 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M14 2v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            {loading ? 'Загрузка...' : 'Обновить'}
+          </button>
+        </div>
+      </div>
+
+      {/* Alert feed */}
+      {loading && alerts.length === 0 ? (
+        <div className="bg-white dark:bg-[#1C1C1E] p-12 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm flex flex-col items-center justify-center">
+          <div className="w-12 h-12 border-4 border-[#4C7F6E]/20 border-t-[#4C7F6E] rounded-full animate-spin mb-4" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Поиск алертов...</p>
+        </div>
+      ) : alerts.length === 0 ? (
+        <div className="bg-white dark:bg-[#1C1C1E] p-12 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm flex flex-col items-center justify-center">
+          <div className="w-16 h-16 bg-gray-100 dark:bg-[#2C2C2E] rounded-2xl flex items-center justify-center mb-4">
+            <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+            Нет активных алертов
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center max-w-md">
+            Система мониторит все активы. Алерты появятся когда ≥5 индикаторов согласятся с вердиктом.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {alerts.map((alert) => (
+            <div
+              key={alert.id}
+              className="bg-white dark:bg-[#1C1C1E] p-4 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm hover:shadow-md transition-all"
+            >
+              <div className="flex items-start gap-3">
+                {/* Icon */}
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${getVerdictColor(alert.verdict)}`}>
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    {alert.verdict === 'UP' ? (
+                      <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round"/>
+                    ) : alert.verdict === 'DOWN' ? (
+                      <path d="M12 5v14M5 12l7 7 7-7" strokeLinecap="round" strokeLinejoin="round"/>
+                    ) : (
+                      <path d="M5 12h14" strokeLinecap="round"/>
+                    )}
+                  </svg>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-[#2C2C2E] text-gray-900 dark:text-white">
+                      <Image
+                        src={`/${alert.symbol.toLowerCase()}.webp`}
+                        alt={alert.symbol}
+                        width={12}
+                        height={12}
+                        className="w-3 h-3"
+                      />
+                      {alert.symbol}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">5m</span>
+                    <span className="text-xs text-gray-400">•</span>
+                    <span className={`text-xs font-semibold ${getAgreementColor(alert.agreementCount)}`}>
+                      {alert.agreementCount}/8 индикаторов
+                    </span>
+                  </div>
+
+                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2 truncate">
+                    {alert.marketTitle}
+                  </h3>
+
+                  <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                    <div className="flex items-center gap-1">
+                      <span>Цена:</span>
+                      <span className="font-mono text-gray-900 dark:text-white">${alert.price.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span>Изм:</span>
+                      <span className={`font-semibold ${alert.changePercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {alert.changePercent >= 0 ? '+' : ''}{alert.changePercent.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span>Уверенность:</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{alert.confidence.toFixed(0)}%</span>
+                    </div>
+                  </div>
+
+                  {/* Indicators preview */}
+                  <div className="flex flex-wrap gap-1 mt-3">
+                    {alert.indicators.slice(0, 4).map((ind: any, idx: number) => (
+                      <span
+                        key={idx}
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                          ind.verdict === 'UP'
+                            ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                            : ind.verdict === 'DOWN'
+                            ? 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400'
+                            : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-600 dark:text-gray-400'
+                        }`}
+                      >
+                        {ind.name}: {ind.value}
+                      </span>
+                    ))}
+                    {alert.indicators.length > 4 && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-[#2C2C2E] text-gray-500 dark:text-gray-400">
+                        +{alert.indicators.length - 4} ещё
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Signal details on hover */}
+                  {alert.signalDetails && alert.signalDetails.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-gray-100 dark:border-[#2C2C2E]">
+                      <div className="flex flex-wrap gap-1">
+                        {alert.signalDetails.slice(0, 3).map((detail: string, idx: number) => (
+                          <span key={idx} className="text-[10px] text-gray-500 dark:text-gray-400">
+                            {detail}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-col gap-2 shrink-0">
+                  <a
+                    href={alert.marketUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-[#4C7F6E] hover:bg-[#3D6658] rounded-lg transition-colors shrink-0"
+                  >
+                    Polymarket ↗
+                  </a>
+                  <span className="text-[10px] text-gray-400 dark:text-gray-500 text-right">
+                    {new Date(alert.timestamp).toLocaleTimeString('ru-RU', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    })}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Params {
   symbol: string;
   timeframe: string;
@@ -970,19 +1244,7 @@ export default function Home() {
         {activeTab === 'analytics' ? (
           <AlertsTab assetOptions={assetOptions} />
         ) : activeTab === 'alerts' ? (
-          <div className="bg-white dark:bg-[#1C1C1E] p-12 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm flex flex-col items-center justify-center">
-            <div className="w-16 h-16 bg-gray-100 dark:bg-[#2C2C2E] rounded-2xl flex items-center justify-center mb-4">
-              <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-              Alerts
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 text-center max-w-md">
-              Заглушка: здесь будет отображаться информация об алертах с фильтрацией по активам.
-            </p>
-          </div>
+          <AlertFeedTab assetOptions={assetOptions} />
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
