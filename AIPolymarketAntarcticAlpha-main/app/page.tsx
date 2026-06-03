@@ -5,6 +5,7 @@ import Image from 'next/image';
 import useSWR from 'swr';
 import { SignalCard } from '@/components/SignalCard';
 import { CustomSelect, type SelectOption } from '@/components/CustomSelect';
+import { CryptoFooter } from '@/components/CryptoFooter';
 import { useT } from '@/lib/useT';
 import { useAuth } from '@/app/providers';
 import { saveAnalysis, subscribeHistory, cleanupHistory, cleanupOldHistory, deleteAnalysis, type AnalysisDoc } from '@/lib/firebase';
@@ -93,22 +94,99 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
   // Фильтр по времени
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>('24h');
 
-  const fetchAlertsData = async () => {
+  // Кэш данных для активов
+  const CACHE_KEY_PREFIX = 'alerts_data_cache_';
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 минут
+
+  const getCachedData = (symbol: string) => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY_PREFIX + symbol);
+      if (!cached) return null;
+      
+      const { data, timestamp } = JSON.parse(cached);
+      const isExpired = Date.now() - timestamp > CACHE_DURATION;
+      
+      if (isExpired) {
+        // Удалить старые данные из кэша
+        localStorage.removeItem(CACHE_KEY_PREFIX + symbol);
+        return null;
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Failed to read cache:', error);
+      return null;
+    }
+  };
+
+  const setCachedData = (symbol: string, data: any[]) => {
+    try {
+      // Ограничиваем кэш до 500 записей на актив
+      const limitedData = data.slice(0, 500);
+      localStorage.setItem(CACHE_KEY_PREFIX + symbol, JSON.stringify({
+        data: limitedData,
+        timestamp: Date.now(),
+      }));
+    } catch (error) {
+      console.error('Failed to save cache:', error);
+      // Если память переполнена, очищаем старый кэш
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        cleanupOldCache();
+      }
+    }
+  };
+
+  const cleanupOldCache = () => {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(CACHE_KEY_PREFIX)) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+    } catch (error) {
+      console.error('Failed to cleanup cache:', error);
+    }
+  };
+
+  const fetchAlertsData = async (forceRefresh = false) => {
     setLoading(true);
     try {
       const symbol = selectedAsset === 'ALL' ? 'BTC' : selectedAsset;
+      
+      if (!forceRefresh) {
+        // Пробуем получить данные из кэша
+        const cached = getCachedData(symbol);
+        if (cached) {
+          setAlertsData(cached);
+          setLastUpdated(new Date());
+          setLoading(false);
+          // Параллельно обновляем данные
+          fetchAlertsData(true);
+          return;
+        }
+      }
+      
+      // Загружаем с сервера
       const res = await fetch(
         `/api/alerts-data?symbol=${symbol}&timeframe=5min&limit=1000&mode=all`
       );
       const data = await res.json();
+      
       if (data.data) {
         // Фильтруем по выбранному активу
         let filtered = data.data;
         if (selectedAsset !== 'ALL') {
           filtered = data.data.filter((item: any) => item.symbol === selectedAsset);
         }
+        
         setAlertsData(filtered);
         setLastUpdated(new Date());
+        
+        // Сохраняем в кэш
+        setCachedData(symbol, data.data);
       }
     } catch (error) {
       console.error('Failed to fetch alerts data:', error);
@@ -116,6 +194,30 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
       setLoading(false);
     }
   };
+
+  // Предзагрузка данных для всех активов при монтировании
+  useEffect(() => {
+    const prefetchAssets = async () => {
+      for (const asset of assetOptions) {
+        const cached = getCachedData(asset.value);
+        if (!cached) {
+          try {
+            const res = await fetch(
+              `/api/alerts-data?symbol=${asset.value}&timeframe=5min&limit=1000&mode=all`
+            );
+            const data = await res.json();
+            if (data.data) {
+              setCachedData(asset.value, data.data);
+            }
+          } catch (error) {
+            console.error(`Failed to prefetch ${asset.value}:`, error);
+          }
+        }
+      }
+    };
+    
+    prefetchAssets();
+  }, []);
 
   useEffect(() => {
     fetchAlertsData();
@@ -379,7 +481,7 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={fetchAlertsData}
+                  onClick={() => fetchAlertsData(true)}
                   disabled={loading}
                   className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
                     loading
@@ -405,6 +507,19 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                     Экспорт CSV
                   </button>
                 )}
+                
+                <button
+                  onClick={() => {
+                    localStorage.clear();
+                    window.location.reload();
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-all"
+                  title="Очистить кэш"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 4h10M6 4V3a1 1 0 011-1h2a1 1 0 011 1v1M5 4v9a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
@@ -543,7 +658,7 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
               <span>Показано {Math.min(filteredData.length, 400)} из {filteredData.length} рынков</span>
               <span className="flex items-center gap-1">
                 <button
-                  onClick={fetchAlertsData}
+                  onClick={() => fetchAlertsData(true)}
                   disabled={loading}
                   className="flex items-center gap-1 hover:text-green-500 transition-colors disabled:opacity-50"
                   title="Обновить данные"
@@ -812,7 +927,8 @@ export default function Home() {
   }, [params.symbol, params.timeframe]);
 
   return (
-    <main className="min-h-screen p-4 md:p-8 bg-gray-50 dark:bg-[#121212]">
+    <>
+      <main className="min-h-screen p-4 md:p-8 bg-gray-50 dark:bg-[#121212] pb-20">
       <div className="max-w-5xl mx-auto space-y-6">
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
           {t('signals')}
@@ -1262,6 +1378,8 @@ export default function Home() {
           </div>
         )}
       </div>
-    </main>
+      </main>
+      <CryptoFooter />
+    </>
   );
 }

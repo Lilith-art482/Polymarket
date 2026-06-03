@@ -28,7 +28,6 @@ const menuItems: MenuItem[] = [
   },
   { type: 'link', key: 'nav.aiChat', href: '#', icon: 'M12 2a2 2 0 012 2v2.17A3 3 0 0117 9v6a3 3 0 01-3 3H6a3 3 0 01-3-3V9a3 3 0 013-3V4a2 2 0 012-2h4zM9 21h6' },
   { type: 'link', key: 'nav.news', href: '#', icon: 'M4 4h16v16H4V4zm4 4h8M4 12h16M4 16h16' },
-  { type: 'link', key: 'nav.bot', href: '#', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
   { type: 'link', key: 'nav.tracker', href: '/tracker', icon: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z' },
   { type: 'link', key: 'nav.toch', href: '/kalkulyator', icon: 'M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z' },
 ];
