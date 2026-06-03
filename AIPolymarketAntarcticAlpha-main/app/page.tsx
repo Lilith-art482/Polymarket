@@ -90,6 +90,9 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
   const [minChange, setMinChange] = useState<string>('');
   const [maxChange, setMaxChange] = useState<string>('');
 
+  // Фильтр по времени
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string>('24h');
+
   const fetchAlertsData = async () => {
     setLoading(true);
     try {
@@ -120,9 +123,42 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
 
   // Авто-обновление отключено - только при ручной перезагрузке
 
-  // Фильтрация по % изменения и статистика за 24 часа
+  // Опции фильтра по времени
+  const timeFilterOptions = [
+    { value: '10m', label: '10 мин' },
+    { value: '30m', label: '30 мин' },
+    { value: '1h', label: '1 час' },
+    { value: '3h', label: '3 часа' },
+    { value: '6h', label: '6 часов' },
+    { value: '9h', label: '9 часов' },
+    { value: '24h', label: '24 часа' },
+  ];
+
+  // Получаем временную границу в зависимости от выбранного фильтра
+  const getTimeCutoff = () => {
+    const now = Date.now();
+    switch (selectedTimeframe) {
+      case '10m': return now - 10 * 60 * 1000;
+      case '30m': return now - 30 * 60 * 1000;
+      case '1h': return now - 60 * 60 * 1000;
+      case '3h': return now - 3 * 60 * 60 * 1000;
+      case '6h': return now - 6 * 60 * 60 * 1000;
+      case '9h': return now - 9 * 60 * 60 * 1000;
+      case '24h': default: return now - 24 * 60 * 60 * 1000;
+    }
+  };
+
+  // Фильтрация по % изменения, времени и статистика
   const { filteredData, stats24h } = useMemo(() => {
     let filtered = alertsData;
+    
+    // Фильтр по времени
+    const timeCutoff = getTimeCutoff();
+    filtered = filtered.filter(item => {
+      if (item.closePrice === null) return false;
+      const marketTime = item.windowStart * 1000;
+      return marketTime >= timeCutoff;
+    });
     
     // Фильтр по минимальному % изменения
     if (minChange !== '') {
@@ -164,7 +200,7 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
         avgChange: avgChange24h,
       },
     };
-  }, [alertsData, minChange, maxChange]);
+  }, [alertsData, minChange, maxChange, selectedTimeframe]);
 
   const exportCSV = () => {
     if (alertsData.length === 0) return;
@@ -285,6 +321,24 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
               </div>
             </div>
             
+            {/* Фильтр по времени */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100 dark:border-[#2C2C2E]">
+              <span className="text-xs text-gray-500 dark:text-gray-400">Период:</span>
+              {timeFilterOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSelectedTimeframe(opt.value)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                    selectedTimeframe === opt.value
+                      ? 'bg-[#4C7F6E] text-white shadow-sm'
+                      : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            
             {/* Статистика за 24 часа */}
             <div className="flex flex-wrap items-center gap-4 text-xs pt-2 border-t border-gray-100 dark:border-[#2C2C2E]">
               <div className="flex items-center gap-2">
@@ -399,7 +453,7 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-[#2C2C2E]">
-                {filteredData.slice(0, 1000).map((item, index) => (
+                {filteredData.slice(0, 400).map((item, index) => (
                   <tr 
                     key={item.id} 
                     className="hover:bg-gray-50 dark:hover:bg-[#2C2C2E]/50 transition-colors"
@@ -484,9 +538,9 @@ function AlertsTab({ assetOptions }: { assetOptions: SelectOption[] }) {
             </table>
           </div>
           
-          <div className="px-4 py-3 border-t border-gray-100 dark:border-[#2C2C2E] bg-gray-50 dark:bg-[#1C1C1E]">
+              <div className="px-4 py-3 border-t border-gray-100 dark:border-[#2C2C2E] bg-gray-50 dark:bg-[#1C1C1E]">
             <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-              <span>Показано {Math.min(filteredData.length, 1000)} из {filteredData.length} рынков</span>
+              <span>Показано {Math.min(filteredData.length, 400)} из {filteredData.length} рынков</span>
               <span className="flex items-center gap-1">
                 <button
                   onClick={fetchAlertsData}
@@ -562,7 +616,7 @@ export default function Home() {
   const [filterTimeframe, setFilterTimeframe] = useState('');
   const [filterVerdict, setFilterVerdict] = useState('');
   const [filterResult, setFilterResult] = useState('');
-  const [activeTab, setActiveTab] = useState<'alerts' | 'manual'>('manual');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'alerts' | 'manual'>('manual');
 
   const filteredHistory = useMemo(() => {
     return history.filter(entry => {
@@ -766,6 +820,16 @@ export default function Home() {
 
         <div className="flex p-1 bg-gray-100 dark:bg-[#1C1C1E] rounded-xl border border-gray-200 dark:border-[#2C2C2E] w-fit">
           <button
+            onClick={() => setActiveTab('analytics')}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+              activeTab === 'analytics'
+                ? 'bg-[#4C7F6E] text-white shadow-sm'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            Analytics
+          </button>
+          <button
             onClick={() => setActiveTab('alerts')}
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
               activeTab === 'alerts'
@@ -783,12 +847,26 @@ export default function Home() {
                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
-            Ручной анализ
+            Direct Query
           </button>
         </div>
 
-        {activeTab === 'alerts' ? (
+        {activeTab === 'analytics' ? (
           <AlertsTab assetOptions={assetOptions} />
+        ) : activeTab === 'alerts' ? (
+          <div className="bg-white dark:bg-[#1C1C1E] p-12 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm flex flex-col items-center justify-center">
+            <div className="w-16 h-16 bg-gray-100 dark:bg-[#2C2C2E] rounded-2xl flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Alerts
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 text-center max-w-md">
+              Заглушка: здесь будет отображаться информация об алертах с фильтрацией по активам.
+            </p>
+          </div>
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
