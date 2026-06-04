@@ -3,9 +3,36 @@ import { NextRequest, NextResponse } from 'next/server';
 const BASE_URL = 'https://gnews.io/api/v4/search';
 // CoinDesk RSS - более надёжный источник чем Cryptopanic
 const RSS_URL = 'https://www.coindesk.com/arc/outboundfeeds/rss/';
+const TRANSLATE_API = 'https://api.mymemory.translated.net/get';
+
+// Перевод текста на русский
+async function translateToRussian(text: string): Promise<string> {
+  if (!text || text.length < 5) return text;
+  
+  try {
+    const url = new URL(TRANSLATE_API);
+    url.searchParams.set('q', text.slice(0, 500));
+    url.searchParams.set('langpair', 'en|ru');
+    
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      return text;
+    }
+    
+    const data = await response.json();
+    return data.responseData?.translatedText || text;
+  } catch {
+    return text;
+  }
+}
 
 async function fetchNews(lang: string, token: string, from: string) {
-  const url = new URL(BASE_URL);
   url.searchParams.set('q', 'bitcoin ethereum cryptocurrency crypto');
   url.searchParams.set('lang', lang);
   url.searchParams.set('max', '10');
@@ -33,15 +60,15 @@ async function fetchNews(lang: string, token: string, from: string) {
   return response.json();
 }
 
-// Парсинг RSS Cryptopanic как фоллбэк
+// Парсинг RSS как фоллбэк с переводом на русский
 async function fetchRSSNews(): Promise<any[]> {
-  console.log('Запрос к Cryptopanic RSS...');
+  console.log('Запрос к CoinDesk RSS...');
   
   const response = await fetch(RSS_URL, {
     method: 'GET',
     headers: {
       'Accept': 'application/rss+xml, application/xml, text/xml',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     },
   });
 
@@ -52,14 +79,13 @@ async function fetchRSSNews(): Promise<any[]> {
 
   const xmlText = await response.text();
   const articles: any[] = [];
-  
   const items = xmlText.split('<item>');
   
   for (let i = 1; i < items.length; i++) {
     const item = items[i];
     
-    const titleMatch = item.match(/<title><!\[CDATA\[(.*?)\]\]>/);
-    const title = titleMatch ? titleMatch[1] : item.match(/<title>(.*?)<\/title>/)?.[1] || 'Без названия';
+    const titleMatch = item.match(/<title>(.*?)<\/title>/);
+    let title = titleMatch ? titleMatch[1] : 'Без названия';
     
     const linkMatch = item.match(/<link>(.*?)<\/link>/);
     const link = linkMatch ? linkMatch[1] : '';
@@ -73,17 +99,21 @@ async function fetchRSSNews(): Promise<any[]> {
     
     let image: string | null = null;
     const mediaMatch = item.match(/<media:content[^>]*url="([^"]*)"/);
-    if (mediaMatch) {
-      image = mediaMatch[1];
-    }
+    if (mediaMatch) image = mediaMatch[1];
     
-    const sourceMatch = item.match(/<dc:creator><!\[CDATA\[(.*?)\]\]>/);
-    const sourceName = sourceMatch ? sourceMatch[1] : 'CryptoPanic';
+    const sourceMatch = item.match(/<dc:creator>(.*?)<\/dc:creator>/);
+    const sourceName = sourceMatch ? sourceMatch[1] : 'CoinDesk';
     
-    if (link) {
+    if (link && title !== 'Без названия') {
+      // Переводим на русский
+      const [translatedTitle, translatedDesc] = await Promise.all([
+        translateToRussian(title),
+        description ? translateToRussian(description) : Promise.resolve(''),
+      ]);
+      
       articles.push({
-        title,
-        description: description || null,
+        title: translatedTitle,
+        description: translatedDesc || null,
         url: link,
         image,
         publishedAt,
@@ -92,7 +122,7 @@ async function fetchRSSNews(): Promise<any[]> {
     }
   }
   
-  return articles;
+  return articles.slice(0, 20);
 }
 
 export async function GET(req: NextRequest) {
@@ -171,13 +201,13 @@ export async function GET(req: NextRequest) {
         index === self.findIndex(a => a.url === article.url)
     ).slice(0, 20);
 
-    console.log(`Всего новостей: ${uniqueArticles.length} (${usedRSS ? 'RSS' : 'GNews'})`);
+    console.log(`Всего новостей: ${uniqueArticles.length} (${usedRSS ? 'RSS (переведено)' : 'GNews'})`);
 
     return NextResponse.json({
       articles: uniqueArticles,
       count: uniqueArticles.length,
       fetchedAt: new Date().toISOString(),
-      source: usedRSS ? 'Cryptopanic RSS' : 'GNews API',
+      source: usedRSS ? 'CoinDesk RSS (переведено на русский)' : 'GNews API',
     }, {
       headers: {
         'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
