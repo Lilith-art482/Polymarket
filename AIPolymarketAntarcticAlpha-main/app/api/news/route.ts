@@ -33,6 +33,7 @@ async function translateToRussian(text: string): Promise<string> {
 }
 
 async function fetchNews(lang: string, token: string, from: string) {
+  const url = new URL(BASE_URL);
   url.searchParams.set('q', 'bitcoin ethereum cryptocurrency crypto');
   url.searchParams.set('lang', lang);
   url.searchParams.set('max', '10');
