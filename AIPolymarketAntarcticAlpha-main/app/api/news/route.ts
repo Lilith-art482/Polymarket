@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const BASE_URL = 'https://gnews.io/api/v4/search';
-const RSS_URL = 'https://cryptopanic.com/news/rss/';
+// CoinDesk RSS - более надёжный источник чем Cryptopanic
+const RSS_URL = 'https://www.coindesk.com/arc/outboundfeeds/rss/';
 
 async function fetchNews(lang: string, token: string, from: string) {
   const url = new URL(BASE_URL);
