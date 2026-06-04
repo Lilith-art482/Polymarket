@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-const RSS_URL = 'https://cryptopanic.com/news/rss/';
+// CoinDesk RSS - более надёжный источник
+const RSS_URL = 'https://www.coindesk.com/arc/outboundfeeds/rss/';
 
 interface RSSArticle {
   title: string;
@@ -62,8 +63,8 @@ function parseRSS(xmlText: string): RSSArticle[] {
     const item = items[i];
     
     // Извлекаем title
-    const titleMatch = item.match(/<title><!\[CDATA\[(.*?)\]\]>/);
-    const title = titleMatch ? titleMatch[1] : item.match(/<title>(.*?)<\/title>/)?.[1] || 'Без названия';
+    const titleMatch = item.match(/<title>(.*?)<\/title>/);
+    const title = titleMatch ? titleMatch[1] : 'Без названия';
     
     // Извлекаем link
     const linkMatch = item.match(/<link>(.*?)<\/link>/);
@@ -73,31 +74,45 @@ function parseRSS(xmlText: string): RSSArticle[] {
     const pubDateMatch = item.match(/<pubDate>(.*?)<\/pubDate>/);
     const pubDate = pubDateMatch ? pubDateMatch[1] : new Date().toISOString();
     
-    // Извлекаем description
+    // Извлекаем description (может быть с CDATA или без)
+    let description = '';
     const descMatch = item.match(/<description><!\[CDATA\[(.*?)\]\]>/);
-    let description = descMatch ? descMatch[1] : '';
+    if (descMatch) {
+      description = descMatch[1];
+    } else {
+      const descMatch2 = item.match(/<description>(.*?)<\/description>/);
+      if (descMatch2) {
+        description = descMatch2[1];
+      }
+    }
     // Удаляем HTML теги из описания
     description = description.replace(/<[^>]*>/g, '').slice(0, 200);
     
-    // Извлекаем изображение (из media:content или description)
+    // Извлекаем изображение (из media:content, enclosure или content:encoded)
     let image: string | undefined;
     const mediaMatch = item.match(/<media:content[^>]*url="([^"]*)"/);
     if (mediaMatch) {
       image = mediaMatch[1];
     } else {
-      const imgMatch = description.match(/<img[^>]*src="([^"]*)"/);
-      if (imgMatch) {
-        image = imgMatch[1];
-        // Удаляем img из описания
-        description = description.replace(/<img[^>]*>/g, '');
+      const enclosureMatch = item.match(/<enclosure[^>]*url="([^"]*)"/);
+      if (enclosureMatch) {
+        image = enclosureMatch[1];
+      } else {
+        const imgMatch = item.match(/<content:encoded[^>]*>(.*?)<\/content:encoded>/s);
+        if (imgMatch) {
+          const imgInContent = imgMatch[1].match(/<img[^>]*src="([^"]*)"/);
+          if (imgInContent) {
+            image = imgInContent[1];
+          }
+        }
       }
     }
     
     // Извлекаем источник
-    const sourceMatch = item.match(/<dc:creator><!\[CDATA\[(.*?)\]\]>/);
-    const source = sourceMatch ? sourceMatch[1] : 'CryptoPanic';
+    const sourceMatch = item.match(/<dc:creator>(.*?)<\/dc:creator>/);
+    const source = sourceMatch ? sourceMatch[1] : 'CoinDesk';
     
-    if (link) {
+    if (link && title !== 'Без названия') {
       articles.push({
         title,
         link,
@@ -109,5 +124,5 @@ function parseRSS(xmlText: string): RSSArticle[] {
     }
   }
   
-  return articles;
+  return articles.slice(0, 20); // Ограничиваем до 20 новостей
 }
