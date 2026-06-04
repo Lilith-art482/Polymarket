@@ -20,6 +20,12 @@ async function fetchNews(lang: string, token: string, from: string) {
 
   if (!response.ok) {
     const errorText = await response.text();
+    
+    // Обработка ошибки 429 (too many requests)
+    if (response.status === 429) {
+      throw new Error(`GNews API rate limit exceeded. Please wait a minute.`);
+    }
+    
     throw new Error(`GNews API error (${lang}): ${response.status} - ${errorText}`);
   }
 
@@ -42,16 +48,47 @@ export async function GET(req: NextRequest) {
     const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     // Параллельно запрашиваем новости на английском и русском
-    const [enData, ruData] = await Promise.all([
+    const [enData, ruData] = await Promise.allSettled([
       fetchNews('en', GNEWS_TOKEN, from),
       fetchNews('ru', GNEWS_TOKEN, from),
     ]);
 
-    // Объединяем и сортируем по дате публикации
-    const allArticles = [
-      ...(enData.articles || []),
-      ...(ruData.articles || []),
-    ].sort((a, b) => 
+    // Собираем статьи из успешных запросов
+    let allArticles: any[] = [];
+    
+    if (enData.status === 'fulfilled') {
+      allArticles = [...(enData.value?.articles || [])];
+      console.log(`EN новостей: ${enData.value?.articles?.length || 0}`);
+    } else {
+      console.warn('EN запрос не удался:', enData.reason);
+    }
+    
+    if (ruData.status === 'fulfilled') {
+      allArticles = [...allArticles, ...(ruData.value?.articles || [])];
+      console.log(`RU новостей: ${ruData.value?.articles?.length || 0}`);
+    } else {
+      console.warn('RU запрос не удался:', ruData.reason);
+    }
+
+    // Если оба запроса не удались
+    if (allArticles.length === 0) {
+      const enError = enData.status === 'rejected' ? (enData.reason as Error)?.message : '';
+      const ruError = ruData.status === 'rejected' ? (ruData.reason as Error)?.message : '';
+      
+      if (enError.includes('rate limit') || ruError.includes('rate limit')) {
+        return NextResponse.json({
+          error: 'Превышен лимит запросов к GNews API. Подождите минуту и обновите страницу.',
+          articles: [],
+          count: 0,
+          fetchedAt: new Date().toISOString(),
+        }, { status: 429 });
+      }
+      
+      throw new Error(`Оба запроса не удались: EN=${enError}, RU=${ruError}`);
+    }
+
+    // Сортируем по дате публикации
+    allArticles.sort((a, b) => 
       new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
     );
 
@@ -61,12 +98,17 @@ export async function GET(req: NextRequest) {
         index === self.findIndex(a => a.url === article.url)
     ).slice(0, 20);
 
-    console.log(`Получено новостей: EN=${enData.articles?.length || 0}, RU=${ruData.articles?.length || 0}, Всего=${uniqueArticles.length}`);
+    console.log(`Всего новостей: ${uniqueArticles.length}`);
 
     return NextResponse.json({
       articles: uniqueArticles,
       count: uniqueArticles.length,
       fetchedAt: new Date().toISOString(),
+    }, {
+      headers: {
+        // Кэшируем на 1 минуту чтобы не превышать лимит API
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120',
+      },
     });
   } catch (error: any) {
     console.error('=== Ошибка в /api/news ===');
