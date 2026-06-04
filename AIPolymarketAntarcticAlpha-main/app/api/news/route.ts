@@ -1,36 +1,23 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-const GNEWS_TOKEN = process.env.GNEWS_TOKEN;
 const BASE_URL = 'https://gnews.io/api/v4/search';
 
-export interface NewsArticle {
-  title: string;
-  description: string | null;
-  url: string;
-  image: string | null;
-  publishedAt: string;
-  source: {
-    name: string;
-    url: string;
-  };
-}
-
-export async function GET() {
-  console.log('GNEWS_TOKEN:', GNEWS_TOKEN ? 'present' : 'missing');
+export async function GET(req: NextRequest) {
+  console.log('=== /api/news вызван ===');
+  console.log('GNEWS_TOKEN из env:', process.env.GNEWS_TOKEN ? '✓ найден' : '✗ не найден');
+  
+  const GNEWS_TOKEN = process.env.GNEWS_TOKEN;
   
   if (!GNEWS_TOKEN) {
-    console.error('GNEWS_TOKEN is not configured');
+    console.error('GNEWS_TOKEN отсутствует в .env.local');
     return NextResponse.json(
-      { error: 'GNEWS_TOKEN not configured' },
+      { error: 'GNEWS_TOKEN not configured. Check .env.local file.' },
       { status: 500 }
     );
   }
 
   try {
-    // Ключевые слова: крипта + важные финансовые термины
     const query = '("cryptocurrency" OR "bitcoin" OR "ethereum" OR "defi") AND ("regulation" OR "SEC" OR "ETF" OR "price" OR "market") -"sponsored"';
-    
-    // Новости за последние 2 часа
     const from = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 
     const url = new URL(BASE_URL);
@@ -41,6 +28,8 @@ export async function GET() {
     url.searchParams.set('from', from);
     url.searchParams.set('token', GNEWS_TOKEN);
 
+    console.log('Запрос к GNews:', url.toString());
+
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: {
@@ -48,21 +37,25 @@ export async function GET() {
       },
     });
 
+    console.log('Статус ответа GNews:', response.status);
+
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('GNews ошибка:', response.status, errorText);
       throw new Error(`GNews API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    const articles: NewsArticle[] = data.articles || [];
+    console.log('Получено статей:', data.articles?.length || 0);
 
     return NextResponse.json({
-      articles,
-      count: articles.length,
+      articles: data.articles || [],
+      count: data.articles?.length || 0,
       fetchedAt: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error('Error fetching news:', error);
+    console.error('=== Ошибка в /api/news ===');
+    console.error(error);
     return NextResponse.json(
       { error: error.message || 'Failed to fetch news' },
       { status: 500 }
