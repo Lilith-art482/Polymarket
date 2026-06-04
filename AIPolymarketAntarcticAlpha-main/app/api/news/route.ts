@@ -17,9 +17,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Упрощённый запрос - GNews не поддерживает сложные boolean-операторы
-    const query = 'cryptocurrency bitcoin ethereum regulation SEC ETF market';
-    const from = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    // Простой запрос - GNews не поддерживает сложные boolean-операторы
+    const query = 'bitcoin ethereum cryptocurrency';
+    // Новости за последние 24 часа (вместо 2 часов)
+    const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     const url = new URL(BASE_URL);
     url.searchParams.set('q', query);
