@@ -10,24 +10,36 @@ async function translateToRussian(text: string): Promise<string> {
   if (!text || text.length < 5) return text;
   
   try {
-    const url = new URL(TRANSLATE_API);
-    url.searchParams.set('q', text.slice(0, 500));
-    url.searchParams.set('langpair', 'en|ru');
-    
-    const response = await fetch(url.toString(), {
-      method: 'GET',
+    // Используем POST для более надёжного перевода
+    const response = await fetch(TRANSLATE_API, {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
       },
+      body: new URLSearchParams({
+        q: text.slice(0, 500),
+        langpair: 'en|ru',
+      }),
     });
     
     if (!response.ok) {
+      console.warn(`Перевод не удался (статус ${response.status}):`, text.slice(0, 50));
       return text;
     }
     
     const data = await response.json();
-    return data.responseData?.translatedText || text;
-  } catch {
+    const translated = data.responseData?.translatedText;
+    
+    if (translated) {
+      console.log(`✓ Переведено: "${text.slice(0, 30)}..." → "${translated.slice(0, 30)}..."`);
+      return translated;
+    }
+    
+    console.warn('Перевод пустой:', text.slice(0, 50));
+    return text;
+  } catch (error) {
+    console.warn('Ошибка перевода:', error);
     return text;
   }
 }
