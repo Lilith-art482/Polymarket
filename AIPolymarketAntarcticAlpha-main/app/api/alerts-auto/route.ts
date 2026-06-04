@@ -4,7 +4,7 @@ import { fetchOHLCV } from '@/lib/mexc';
 
 const ASSETS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'DOGE'];
 const TIMEFRAME = '5min';
-const MIN_AGREEMENT = 5;
+const MIN_AGREEMENT = 4;
 
 interface Market {
   id: string;
@@ -110,14 +110,14 @@ async function fetchPrice(symbol: string): Promise<{ price: number; changePercen
   }
 }
 
-async function analyzeAsset(symbol: string): Promise<AlertData[]> {
+async function analyzeAsset(symbol: string): Promise<AlertData | null> {
   try {
     // Получаем OHLCV данные с MEXC
     const ohlcv = await fetchOHLCV(symbol, TIMEFRAME, 100);
     
     if (ohlcv.length < 30) {
       console.log(`Not enough OHLCV data for ${symbol}`);
-      return [];
+      return null;
     }
 
     // Рассчитываем индикаторы
@@ -133,43 +133,40 @@ async function analyzeAsset(symbol: string): Promise<AlertData[]> {
     // Получаем рынки Polymarket (как в Direct Query)
     const markets = await fetchMarkets(symbol);
     
-    const alerts: AlertData[] = [];
-    
-    for (const market of markets) {
-      // Проверяем порог соглашения (5+ индикаторов)
-      if (signal.positiveCount >= MIN_AGREEMENT) {
-        alerts.push({
-          id: `${symbol}-${market.id}-${Date.now()}`,
-          timestamp: Date.now(),
-          symbol,
-          timeframe: TIMEFRAME,
-          marketId: market.id,
-          marketTitle: market.title,
-          marketUrl: market.url,
-          verdict: signal.verdict as 'UP' | 'DOWN' | 'NEUTRAL',
-          confidence: (signal.positiveCount / 8) * 100,
-          indicators: [
-            { name: 'RSI', value: ind.rsi.toFixed(1), verdict: ind.rsi < 35 ? 'UP' : ind.rsi > 65 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-            { name: 'MACD', value: ind.macdHist.toFixed(4), verdict: ind.macdHist > 0 ? 'UP' : ind.macdHist < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-            { name: 'EMA9', value: ind.ema9.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-            { name: 'EMA21', value: ind.ema21.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-            { name: 'VWAP', value: ind.vwap.toFixed(2), verdict: ind.price > ind.vwap ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-            { name: 'BB %B', value: ind.bbPercentB.toFixed(2), verdict: ind.bbPercentB < 0.2 ? 'UP' : ind.bbPercentB > 0.8 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-            { name: 'ADX', value: ind.adx.toFixed(0), verdict: ind.adx > 20 && ind.plusDI > ind.minusDI ? 'UP' : ind.adx > 20 && ind.minusDI > ind.plusDI ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-            { name: 'OBV', value: ind.obvSlope.toFixed(0), verdict: ind.obvSlope > 0 ? 'UP' : ind.obvSlope < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-          ],
-          agreementCount: signal.positiveCount,
-          price: priceData.price,
-          changePercent: priceData.changePercent,
-          signalDetails: Object.values(signal.details),
-        });
-      }
+    // Проверяем порог соглашения (4+ индикатора)
+    if (signal.positiveCount >= MIN_AGREEMENT && markets.length > 0) {
+      const market = markets[0]; // Берем первый рынок для каждого актива
+      return {
+        id: `${symbol}-${market.id}-${Date.now()}`,
+        timestamp: Date.now(),
+        symbol,
+        timeframe: TIMEFRAME,
+        marketId: market.id,
+        marketTitle: market.title,
+        marketUrl: market.url,
+        verdict: signal.verdict as 'UP' | 'DOWN' | 'NEUTRAL',
+        confidence: (signal.positiveCount / 8) * 100,
+        indicators: [
+          { name: 'RSI', value: ind.rsi.toFixed(1), verdict: ind.rsi < 35 ? 'UP' : ind.rsi > 65 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+          { name: 'MACD', value: ind.macdHist.toFixed(4), verdict: ind.macdHist > 0 ? 'UP' : ind.macdHist < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+          { name: 'EMA9', value: ind.ema9.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
+          { name: 'EMA21', value: ind.ema21.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
+          { name: 'VWAP', value: ind.vwap.toFixed(2), verdict: ind.price > ind.vwap ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
+          { name: 'BB %B', value: ind.bbPercentB.toFixed(2), verdict: ind.bbPercentB < 0.2 ? 'UP' : ind.bbPercentB > 0.8 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+          { name: 'ADX', value: ind.adx.toFixed(0), verdict: ind.adx > 20 && ind.plusDI > ind.minusDI ? 'UP' : ind.adx > 20 && ind.minusDI > ind.plusDI ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+          { name: 'OBV', value: ind.obvSlope.toFixed(0), verdict: ind.obvSlope > 0 ? 'UP' : ind.obvSlope < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
+        ],
+        agreementCount: signal.positiveCount,
+        price: priceData.price,
+        changePercent: priceData.changePercent,
+        signalDetails: Object.values(signal.details),
+      };
     }
     
-    return alerts;
+    return null;
   } catch (error) {
     console.error(`Error analyzing ${symbol}:`, error);
-    return [];
+    return null;
   }
 }
 
@@ -177,16 +174,14 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol') || 'ALL';
   
-  const alerts: AlertData[] = [];
-  
   const assetsToCheck = symbol === 'ALL' ? ASSETS : [symbol];
   
-  // Параллельный анализ всех активов
+  // Параллельный анализ всех активов - по одному алерту на актив
   const results = await Promise.all(
     assetsToCheck.map(asset => analyzeAsset(asset))
   );
   
-  results.flat().forEach(alert => alerts.push(alert));
+  const alerts = results.filter((a): a is AlertData => a !== null);
   
   // Сортируем по времени (новые сначала)
   alerts.sort((a, b) => b.timestamp - a.timestamp);

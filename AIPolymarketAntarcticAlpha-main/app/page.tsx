@@ -39,13 +39,13 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
     fetchAlerts();
   }, [selectedAsset]);
 
-  // Авто-обновление каждые 30 секунд
+  // Авто-обновление каждые 120 секунд
   useEffect(() => {
     if (!autoRefresh) return;
     
     const interval = setInterval(() => {
       fetchAlerts();
-    }, 30000);
+    }, 120000);
     
     return () => clearInterval(interval);
   }, [autoRefresh]);
@@ -69,9 +69,23 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
       {/* Header */}
       <div className="bg-white dark:bg-[#1C1C1E] p-5 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            🚨 Автоматические алерты
-          </h2>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M13.73 21a2 2 0 01-3.46 0" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M12 3v1" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Автоматические алерты
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Мониторинг 4+ индикаторов в реальном времени
+              </p>
+            </div>
+          </div>
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
@@ -163,110 +177,124 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
           {alerts.map((alert) => (
             <div
               key={alert.id}
-              className="bg-white dark:bg-[#1C1C1E] p-5 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm hover:shadow-lg transition-all"
+              className="bg-gradient-to-br from-white to-gray-50 dark:from-[#1C1C1E] dark:to-[#161618] p-5 rounded-2xl border border-gray-200 dark:border-[#2C2C2E] shadow-sm hover:shadow-lg transition-all group"
             >
               <div className="flex items-start gap-4">
-                {/* Icon */}
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${getVerdictColor(alert.verdict)}`}>
-                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    {alert.verdict === 'UP' ? (
-                      <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round"/>
-                    ) : alert.verdict === 'DOWN' ? (
-                      <path d="M12 5v14M5 12l7 7 7-7" strokeLinecap="round" strokeLinejoin="round"/>
-                    ) : (
-                      <path d="M5 12h14" strokeLinecap="round"/>
-                    )}
-                  </svg>
+                {/* Signal Icon */}
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
+                  alert.verdict === 'UP' 
+                    ? 'bg-gradient-to-br from-green-400 to-green-600' 
+                    : alert.verdict === 'DOWN'
+                    ? 'bg-gradient-to-br from-red-400 to-red-600'
+                    : 'bg-gradient-to-br from-gray-400 to-gray-600'
+                }`}>
+                  {alert.verdict === 'UP' ? (
+                    <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M13 7L7 13l6 6" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M13 17V7" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  ) : alert.verdict === 'DOWN' ? (
+                    <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M11 17l6-6-6-6" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M11 7v10" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M5 12h14" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   {/* Header */}
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-[#2C2C2E] text-gray-900 dark:text-white">
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold bg-white dark:bg-[#2C2C2E] text-gray-900 dark:text-white border border-gray-200 dark:border-gray-700 shadow-sm">
                       <Image
                         src={`/${alert.symbol.toLowerCase()}.webp`}
                         alt={alert.symbol}
-                        width={16}
-                        height={16}
-                        className="w-4 h-4"
+                        width={18}
+                        height={18}
+                        className="w-4.5 h-4.5"
                       />
                       {alert.symbol}
                     </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">5m</span>
-                    <span className="text-xs text-gray-400">•</span>
-                    <span className={`text-sm font-bold ${getAgreementColor(alert.agreementCount)}`}>
-                      {alert.agreementCount}/8 индикаторов согласны
+                    <span className="px-2 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400">
+                      5m
                     </span>
-                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-                      Уверенность: {alert.confidence.toFixed(0)}%
+                    <span className="text-xs text-gray-400">•</span>
+                    <span className={`text-sm font-bold ${
+                      alert.agreementCount >= 7 ? 'text-green-600 dark:text-green-400' :
+                      alert.agreementCount >= 5 ? 'text-yellow-600 dark:text-yellow-400' :
+                      'text-orange-600 dark:text-orange-400'
+                    }`}>
+                      {alert.agreementCount}/8 индикаторов
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300">
+                      {alert.confidence.toFixed(0)}% уверенность
                     </span>
                   </div>
 
                   {/* Title */}
-                  <h3 className="text-base font-medium text-gray-900 dark:text-white mb-3 line-clamp-2">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4 line-clamp-2">
                     {alert.marketTitle}
                   </h3>
 
                   {/* Price info */}
-                  <div className="flex items-center gap-4 text-sm mb-3 flex-wrap">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-gray-500 dark:text-gray-400">Цена:</span>
-                      <span className="font-mono font-semibold text-gray-900 dark:text-white">${alert.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <div className="flex items-center gap-6 text-sm mb-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Цена:</span>
+                      <span className="font-mono font-bold text-lg text-gray-900 dark:text-white">
+                        ${alert.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-gray-500 dark:text-gray-400">24ч:</span>
-                      <span className={`font-semibold ${alert.changePercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">24ч:</span>
+                      <span className={`font-bold text-sm ${alert.changePercent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {alert.changePercent >= 0 ? '+' : ''}{alert.changePercent.toFixed(2)}%
                       </span>
                     </div>
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-auto">
+                    <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
                       {new Date(alert.timestamp).toLocaleTimeString('ru-RU', {
                         hour: '2-digit',
                         minute: '2-digit',
-                        second: '2-digit',
                       })}
                     </span>
                   </div>
 
                   {/* Indicators grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     {alert.indicators.map((ind: any, idx: number) => (
                       <div
                         key={idx}
-                        className={`px-2.5 py-2 rounded-lg text-xs ${
+                        className={`relative overflow-hidden rounded-xl p-3 border transition-all ${
                           ind.verdict === 'UP'
-                            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                            ? 'bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-900/30 border-green-200 dark:border-green-800'
                             : ind.verdict === 'DOWN'
-                            ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                            : 'bg-gray-50 dark:bg-[#2C2C2E] border border-gray-200 dark:border-gray-700'
+                            ? 'bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-900/30 border-red-200 dark:border-red-800'
+                            : 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-[#2C2C2E] dark:to-[#252527] border-gray-200 dark:border-gray-700'
                         }`}
                       >
-                        <div className={`font-semibold mb-0.5 ${
+                        <div className={`text-xs font-bold mb-1.5 flex items-center gap-1 ${
                           ind.verdict === 'UP'
                             ? 'text-green-700 dark:text-green-400'
                             : ind.verdict === 'DOWN'
                             ? 'text-red-700 dark:text-red-400'
                             : 'text-gray-600 dark:text-gray-400'
                         }`}>
+                          {ind.verdict === 'UP' && <span>↑</span>}
+                          {ind.verdict === 'DOWN' && <span>↓</span>}
                           {ind.name}
                         </div>
-                        <div className="font-mono text-gray-900 dark:text-white">
+                        <div className="font-mono text-sm font-bold text-gray-900 dark:text-white">
                           {ind.value}
                         </div>
                       </div>
                     ))}
-                  </div>
-
-                  {/* Signal details */}
-                  <div className="pt-3 border-t border-gray-100 dark:border-[#2C2C2E]">
-                    <div className="flex flex-wrap gap-2">
-                      {alert.signalDetails.map((detail: string, idx: number) => (
-                        <span key={idx} className="text-xs text-gray-600 dark:text-gray-400">
-                          {detail}
-                        </span>
-                      ))}
-                    </div>
                   </div>
                 </div>
 
@@ -276,7 +304,7 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                     href={alert.marketUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[#4C7F6E] hover:bg-[#3D6658] rounded-xl transition-all shrink-0 shadow-sm hover:shadow"
+                    className="inline-flex items-center gap-2 px-5 py-3 text-sm font-bold text-white bg-gradient-to-r from-[#4C7F6E] to-[#3D6658] hover:from-[#3D6658] hover:to-[#2F4F4F] rounded-xl transition-all shrink-0 shadow-lg hover:shadow-xl hover:scale-105"
                   >
                     <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
                       <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
