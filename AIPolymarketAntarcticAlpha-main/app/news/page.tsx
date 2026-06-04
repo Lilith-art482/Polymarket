@@ -79,7 +79,7 @@ export default function NewsPage() {
           <div className="mt-4 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span>Новости за последние 24 часа</span>
+              <span>Новости EN + RU за 24 часа</span>
             </div>
             {newsData?.fetchedAt && (
               <span>
@@ -189,7 +189,7 @@ export default function NewsPage() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Нет новостей</h3>
             <p className="text-gray-500 dark:text-gray-400 mb-6">
-              За последние 24 часа не найдено новостей по вашим критериям
+              За последние 24 часа не найдено новостей на английском и русском языках
             </p>
             <button
               onClick={() => mutate()}
