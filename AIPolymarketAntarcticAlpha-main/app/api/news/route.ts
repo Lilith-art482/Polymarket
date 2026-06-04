@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const query = '("cryptocurrency" OR "bitcoin" OR "ethereum" OR "defi") AND ("regulation" OR "SEC" OR "ETF" OR "price" OR "market") -"sponsored"';
+    // Упрощённый запрос - GNews не поддерживает сложные boolean-операторы
+    const query = 'cryptocurrency bitcoin ethereum regulation SEC ETF market';
     const from = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 
     const url = new URL(BASE_URL);
