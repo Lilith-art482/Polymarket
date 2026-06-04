@@ -133,8 +133,23 @@ async function analyzeAsset(symbol: string): Promise<AlertData | null> {
     // Получаем рынки Polymarket (как в Direct Query)
     const markets = await fetchMarkets(symbol);
     
+    // Формируем массив индикаторов
+    const indicators = [
+      { name: 'RSI', value: ind.rsi.toFixed(1), verdict: ind.rsi < 35 ? 'UP' as const : ind.rsi > 65 ? 'DOWN' as const : 'NEUTRAL' as const },
+      { name: 'MACD', value: ind.macdHist.toFixed(4), verdict: ind.macdHist > 0 ? 'UP' as const : ind.macdHist < 0 ? 'DOWN' as const : 'NEUTRAL' as const },
+      { name: 'EMA9', value: ind.ema9.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' as const : 'DOWN' as const },
+      { name: 'EMA21', value: ind.ema21.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' as const : 'DOWN' as const },
+      { name: 'VWAP', value: ind.vwap.toFixed(2), verdict: ind.price > ind.vwap ? 'UP' as const : 'DOWN' as const },
+      { name: 'BB %B', value: ind.bbPercentB.toFixed(2), verdict: ind.bbPercentB < 0.2 ? 'UP' as const : ind.bbPercentB > 0.8 ? 'DOWN' as const : 'NEUTRAL' as const },
+      { name: 'ADX', value: ind.adx.toFixed(0), verdict: ind.adx > 20 && ind.plusDI > ind.minusDI ? 'UP' as const : ind.adx > 20 && ind.minusDI > ind.plusDI ? 'DOWN' as const : 'NEUTRAL' as const },
+      { name: 'OBV', value: ind.obvSlope.toFixed(0), verdict: ind.obvSlope > 0 ? 'UP' as const : ind.obvSlope < 0 ? 'DOWN' as const : 'NEUTRAL' as const },
+    ];
+    
+    // Считаем количество индикаторов с чётким сигналом (не NEUTRAL)
+    const agreementCount = indicators.filter(i => i.verdict !== 'NEUTRAL').length;
+    
     // Проверяем порог соглашения (4+ индикатора)
-    if (signal.positiveCount >= MIN_AGREEMENT && markets.length > 0) {
+    if (agreementCount >= MIN_AGREEMENT && markets.length > 0) {
       const market = markets[0]; // Берем первый рынок для каждого актива
       return {
         id: `${symbol}-${market.id}-${Date.now()}`,
@@ -145,18 +160,9 @@ async function analyzeAsset(symbol: string): Promise<AlertData | null> {
         marketTitle: market.title,
         marketUrl: market.url,
         verdict: signal.verdict as 'UP' | 'DOWN' | 'NEUTRAL',
-        confidence: (signal.positiveCount / 8) * 100,
-        indicators: [
-          { name: 'RSI', value: ind.rsi.toFixed(1), verdict: ind.rsi < 35 ? 'UP' : ind.rsi > 65 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-          { name: 'MACD', value: ind.macdHist.toFixed(4), verdict: ind.macdHist > 0 ? 'UP' : ind.macdHist < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-          { name: 'EMA9', value: ind.ema9.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-          { name: 'EMA21', value: ind.ema21.toFixed(2), verdict: ind.ema9 > ind.ema21 ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-          { name: 'VWAP', value: ind.vwap.toFixed(2), verdict: ind.price > ind.vwap ? 'UP' : 'DOWN' as 'UP' | 'DOWN' },
-          { name: 'BB %B', value: ind.bbPercentB.toFixed(2), verdict: ind.bbPercentB < 0.2 ? 'UP' : ind.bbPercentB > 0.8 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-          { name: 'ADX', value: ind.adx.toFixed(0), verdict: ind.adx > 20 && ind.plusDI > ind.minusDI ? 'UP' : ind.adx > 20 && ind.minusDI > ind.plusDI ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-          { name: 'OBV', value: ind.obvSlope.toFixed(0), verdict: ind.obvSlope > 0 ? 'UP' : ind.obvSlope < 0 ? 'DOWN' : 'NEUTRAL' as 'UP' | 'DOWN' | 'NEUTRAL' },
-        ],
-        agreementCount: signal.positiveCount,
+        confidence: (agreementCount / 8) * 100,
+        indicators,
+        agreementCount,
         price: priceData.price,
         changePercent: priceData.changePercent,
         signalDetails: Object.values(signal.details),
