@@ -16,6 +16,7 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState<number>(30000);
 
   const fetchAlerts = async () => {
     setLoading(true);
@@ -41,16 +42,16 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
     fetchAlerts();
   }, [selectedAsset]);
 
-  // Авто-обновление каждые 30 секунд
+  // Авто-обновление с выбранным интервалом
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || refreshInterval === 0) return;
     
     const interval = setInterval(() => {
       fetchAlerts();
-    }, 30000);
+    }, refreshInterval);
     
     return () => clearInterval(interval);
-  }, [autoRefresh]);
+  }, [autoRefresh, refreshInterval]);
 
   const getVerdictColor = (verdict: string) => {
     switch (verdict) {
@@ -84,63 +85,78 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                 Автоматические алерты
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Мониторинг 8 индикаторов • Обновление каждые 30 сек
+                Мониторинг 8 индикаторов
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
-              autoRefresh
-                ? 'bg-green-500 text-white shadow-lg shadow-green-500/30'
-                : 'bg-gray-200 dark:bg-[#2C2C2E] text-gray-600 dark:text-gray-400'
-            }`}
-            title="Автообновление каждые 30 секунд"
-          >
-            {autoRefresh ? (
-              <>
+          
+          {/* Auto-refresh toggle with interval selector */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className={`px-3 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-2 border ${
+                autoRefresh
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
+                  : 'bg-gray-50 dark:bg-[#2C2C2E] text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+              }`}
+              title="Вкл/Выкл автообновление"
+            >
+              {autoRefresh ? (
                 <svg className="w-4 h-4 animate-spin" viewBox="0 0 16 16" fill="none">
                   <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="30 10"/>
                 </svg>
-                <span>Обновление</span>
-                <span className="px-1.5 py-0.5 bg-white/20 rounded-lg">30с</span>
-              </>
-            ) : (
-              <>
+              ) : (
                 <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
                   <rect x="5" y="3" width="6" height="10" rx="1" stroke="currentColor" strokeWidth="1.5"/>
                   <path d="M5 6h6" stroke="currentColor" strokeWidth="1.5"/>
                 </svg>
-                <span>Остановлено</span>
-              </>
-            )}
-          </button>
+              )}
+              <span>{autoRefresh ? 'Вкл' : 'Выкл'}</span>
+            </button>
+
+            {/* Interval selector */}
+            <select
+              value={refreshInterval}
+              onChange={(e) => setRefreshInterval(Number(e.target.value))}
+              disabled={!autoRefresh}
+              className="px-3 py-2 rounded-xl text-xs font-medium bg-gray-50 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 outline-none focus:border-[#4C7F6E] disabled:opacity-50"
+            >
+              <option value={30000}>30 сек</option>
+              <option value={60000}>60 сек</option>
+              <option value={120000}>2 мин</option>
+              <option value={180000}>3 мин</option>
+            </select>
+          </div>
         </div>
 
-        {/* Asset filter */}
-        <div className="flex flex-wrap gap-2 mb-4">
+        {/* Asset selector - beautiful pills */}
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setSelectedAsset('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 border ${
               selectedAsset === 'ALL'
-                ? 'bg-[#4C7F6E] text-white'
-                : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
+                ? 'bg-[#4C7F6E] text-white border-[#4C7F6E] shadow-sm'
+                : 'bg-white dark:bg-[#1C1C1E] text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-[#4C7F6E]/50'
             }`}
           >
+            <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5"/>
+              <path d="M8 4v8M4 8h8" stroke="currentColor" strokeWidth="1.5"/>
+            </svg>
             ВСЕ
           </button>
           {assetOptions.map(opt => (
             <button
               key={opt.value}
               onClick={() => setSelectedAsset(opt.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 border ${
                 selectedAsset === opt.value
-                  ? 'bg-[#4C7F6E] text-white'
-                  : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3C3C3E]'
+                  ? 'bg-[#4C7F6E] text-white border-[#4C7F6E] shadow-sm'
+                  : 'bg-white dark:bg-[#1C1C1E] text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-[#4C7F6E]/50'
               }`}
             >
               {opt.icon}
-              {opt.label}
+              <span>{opt.label}</span>
             </button>
           ))}
         </div>
