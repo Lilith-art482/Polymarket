@@ -21,7 +21,7 @@ interface AlertData {
   marketId: string;
   marketTitle: string;
   marketUrl: string;
-  verdict: 'UP' | 'DOWN' | 'NEUTRAL';
+  verdict: 'UP' | 'DOWN';
   confidence: number;
   indicators: {
     name: string;
@@ -146,11 +146,20 @@ async function analyzeAsset(symbol: string): Promise<AlertData | null> {
     ];
     
     // Считаем количество индикаторов с чётким сигналом (не NEUTRAL)
-    const agreementCount = indicators.filter(i => i.verdict !== 'NEUTRAL').length;
+    const totalAgreement = indicators.filter(i => i.verdict !== 'NEUTRAL').length;
     
     // Проверяем порог соглашения (4+ индикатора)
-    if (agreementCount >= MIN_AGREEMENT && markets.length > 0) {
+    if (totalAgreement >= MIN_AGREEMENT && markets.length > 0) {
       const market = markets[0]; // Берем первый рынок для каждого актива
+      
+      // Определяем чёткий вердикт на основе большинства индикаторов (без NEUTRAL)
+      const upCount = indicators.filter(i => i.verdict === 'UP').length;
+      const downCount = indicators.filter(i => i.verdict === 'DOWN').length;
+      const finalVerdict: 'UP' | 'DOWN' = upCount >= downCount ? 'UP' : 'DOWN';
+      
+      // agreementCount показывает сколько индикаторов согласны с ГЛАВНЫМ вердиктом
+      const agreementCount = finalVerdict === 'UP' ? upCount : downCount;
+      
       return {
         id: `${symbol}-${market.id}-${Date.now()}`,
         timestamp: Date.now(),
@@ -159,7 +168,7 @@ async function analyzeAsset(symbol: string): Promise<AlertData | null> {
         marketId: market.id,
         marketTitle: market.title,
         marketUrl: market.url,
-        verdict: signal.verdict as 'UP' | 'DOWN' | 'NEUTRAL',
+        verdict: finalVerdict,
         confidence: (agreementCount / 8) * 100,
         indicators,
         agreementCount,

@@ -25,7 +25,9 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
       const data = await res.json();
       
       if (data.success && data.data) {
-        setAlerts(data.data);
+        // Фильтруем только UP/DOWN (убираем NEUTRAL если остались старые данные)
+        const filtered = data.data.filter((a: any) => a.verdict === 'UP' || a.verdict === 'DOWN');
+        setAlerts(filtered);
         setLastUpdated(new Date());
       }
     } catch (error) {
