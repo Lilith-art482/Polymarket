@@ -41,7 +41,8 @@ function formatDate(dateString: string): string {
 
 export default function NewsPage() {
   const { data: newsData, error, isLoading, mutate } = useSWR<NewsResponse>('/api/news', fetcher, {
-    refreshInterval: 60000, // Обновлять каждую минуту
+    refreshInterval: 300000, // Обновлять каждые 5 минут (чтобы не превышать лимит GNews API)
+    dedupingInterval: 60000, // Не дублировать запросы в течение 1 минуты
   });
 
   return (
