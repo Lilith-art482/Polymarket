@@ -84,21 +84,36 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                 Автоматические алерты
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Мониторинг 4+ индикаторов • Обновление каждые 30 сек
+                Мониторинг 8 индикаторов • Обновление каждые 30 сек
               </p>
             </div>
           </div>
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
+            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
               autoRefresh
-                ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                : 'bg-gray-100 dark:bg-[#2C2C2E] text-gray-600 dark:text-gray-400'
+                ? 'bg-green-500 text-white shadow-lg shadow-green-500/30'
+                : 'bg-gray-200 dark:bg-[#2C2C2E] text-gray-600 dark:text-gray-400'
             }`}
             title="Автообновление каждые 30 секунд"
           >
-            <span className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-            {autoRefresh ? '🔄 30с' : '⏸ Остановлено'}
+            {autoRefresh ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="30 10"/>
+                </svg>
+                <span>Обновление</span>
+                <span className="px-1.5 py-0.5 bg-white/20 rounded-lg">30с</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none">
+                  <rect x="5" y="3" width="6" height="10" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M5 6h6" stroke="currentColor" strokeWidth="1.5"/>
+                </svg>
+                <span>Остановлено</span>
+              </>
+            )}
           </button>
         </div>
 
@@ -211,19 +226,24 @@ function AlertFeedTab({ assetOptions }: { assetOptions: SelectOption[] }) {
                       />
                       {alert.symbol}
                     </span>
-                    <span className="px-2 py-1 rounded-lg text-xs font-semibold bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400">
+                    
+                    {/* Compact info badges */}
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-900/30">
                       5m
                     </span>
-                    <span className="text-xs text-gray-400">•</span>
-                    <span className={`text-sm font-bold ${
-                      alert.agreementCount >= 7 ? 'text-green-600 dark:text-green-400' :
-                      alert.agreementCount >= 5 ? 'text-yellow-600 dark:text-yellow-400' :
-                      'text-orange-600 dark:text-orange-400'
+                    
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                      alert.agreementCount >= 6 
+                        ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border-green-100 dark:border-green-900/30'
+                        : alert.agreementCount >= 5
+                        ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/30'
+                        : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 border-orange-100 dark:border-orange-900/30'
                     }`}>
-                      {alert.agreementCount}/8 индикаторов
+                      {alert.agreementCount}/8
                     </span>
-                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-gray-100 dark:bg-[#2C2C2E] text-gray-700 dark:text-gray-300">
-                      {alert.confidence.toFixed(0)}% уверенность
+                    
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-50 dark:bg-[#2C2C2E] text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                      {alert.confidence.toFixed(0)}%
                     </span>
                   </div>
 
