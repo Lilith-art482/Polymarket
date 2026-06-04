@@ -44,7 +44,11 @@ export function CryptoFooter() {
   const { data: newsData, error, isLoading, mutate } = useSWR<NewsResponse>(
     activePanel === 'news' ? '/api/news' : null,
     fetcher,
-    { refreshInterval: 60000 } // Обновлять каждую минуту
+    { 
+      refreshInterval: 300000, // Обновлять каждые 5 минут
+      dedupingInterval: 60000, // Не дублировать запросы в течение 1 минуты
+      revalidateOnFocus: false, // Не обновлять при возврате на вкладку
+    }
   );
 
   // Устанавливаем CSS переменную для ширины сайдбара
