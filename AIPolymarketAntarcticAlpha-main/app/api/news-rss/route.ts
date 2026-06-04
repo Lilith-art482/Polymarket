@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server';
 // CoinDesk RSS - более надёжный источник
 const RSS_URL = 'https://www.coindesk.com/arc/outboundfeeds/rss/';
 
+// API для перевода (бесплатный, без ключа)
+const TRANSLATE_API = 'https://api.mymemory.translated.net/get';
+
 interface RSSArticle {
   title: string;
   link: string;
@@ -14,7 +17,7 @@ interface RSSArticle {
 
 export async function GET() {
   try {
-    console.log('Запрос к Cryptopanic RSS...');
+    console.log('Запрос к CoinDesk RSS...');
     
     const response = await fetch(RSS_URL, {
       method: 'GET',
@@ -32,14 +35,15 @@ export async function GET() {
     }
 
     const xmlText = await response.text();
-    const articles = parseRSS(xmlText);
+    // Переводим на русский
+    const articles = await parseRSS(xmlText, true);
 
     console.log(`Получено новостей из RSS: ${articles.length}`);
 
     return NextResponse.json({
       articles,
       count: articles.length,
-      source: 'Cryptopanic RSS',
+      source: 'CoinDesk RSS (переведено на русский)',
       fetchedAt: new Date().toISOString(),
     });
   } catch (error: any) {
@@ -52,8 +56,37 @@ export async function GET() {
   }
 }
 
+// Перевод текста на русский
+async function translateToRussian(text: string): Promise<string> {
+  if (!text || text.length < 5) return text;
+  
+  try {
+    const url = new URL(TRANSLATE_API);
+    url.searchParams.set('q', text.slice(0, 500)); // Лимит 500 символов
+    url.searchParams.set('langpair', 'en|ru');
+    
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      console.warn('Ошибка перевода:', response.status);
+      return text;
+    }
+    
+    const data = await response.json();
+    return data.responseData?.translatedText || text;
+  } catch (error) {
+    console.warn('Перевод не удался:', error);
+    return text;
+  }
+}
+
 // Парсинг RSS XML вручную (без внешних библиотек)
-function parseRSS(xmlText: string): RSSArticle[] {
+async function parseRSS(xmlText: string, translate: boolean = false): Promise<RSSArticle[]> {
   const articles: RSSArticle[] = [];
   
   // Разделяем на items
@@ -64,7 +97,7 @@ function parseRSS(xmlText: string): RSSArticle[] {
     
     // Извлекаем title
     const titleMatch = item.match(/<title>(.*?)<\/title>/);
-    const title = titleMatch ? titleMatch[1] : 'Без названия';
+    let title = titleMatch ? titleMatch[1] : 'Без названия';
     
     // Извлекаем link
     const linkMatch = item.match(/<link>(.*?)<\/link>/);
@@ -74,7 +107,7 @@ function parseRSS(xmlText: string): RSSArticle[] {
     const pubDateMatch = item.match(/<pubDate>(.*?)<\/pubDate>/);
     const pubDate = pubDateMatch ? pubDateMatch[1] : new Date().toISOString();
     
-    // Извлекаем description (может быть с CDATA или без)
+    // Извлекаем description
     let description = '';
     const descMatch = item.match(/<description><!\[CDATA\[(.*?)\]\]>/);
     if (descMatch) {
@@ -85,10 +118,10 @@ function parseRSS(xmlText: string): RSSArticle[] {
         description = descMatch2[1];
       }
     }
-    // Удаляем HTML теги из описания
+    // Удаляем HTML теги
     description = description.replace(/<[^>]*>/g, '').slice(0, 200);
     
-    // Извлекаем изображение (из media:content, enclosure или content:encoded)
+    // Извлекаем изображение
     let image: string | undefined;
     const mediaMatch = item.match(/<media:content[^>]*url="([^"]*)"/);
     if (mediaMatch) {
@@ -97,14 +130,6 @@ function parseRSS(xmlText: string): RSSArticle[] {
       const enclosureMatch = item.match(/<enclosure[^>]*url="([^"]*)"/);
       if (enclosureMatch) {
         image = enclosureMatch[1];
-      } else {
-        const imgMatch = item.match(/<content:encoded[^>]*>(.*?)<\/content:encoded>/s);
-        if (imgMatch) {
-          const imgInContent = imgMatch[1].match(/<img[^>]*src="([^"]*)"/);
-          if (imgInContent) {
-            image = imgInContent[1];
-          }
-        }
       }
     }
     
@@ -113,6 +138,16 @@ function parseRSS(xmlText: string): RSSArticle[] {
     const source = sourceMatch ? sourceMatch[1] : 'CoinDesk';
     
     if (link && title !== 'Без названия') {
+      // Переводим если нужно
+      if (translate) {
+        const [translatedTitle, translatedDesc] = await Promise.all([
+          translateToRussian(title),
+          description ? translateToRussian(description) : Promise.resolve(''),
+        ]);
+        title = translatedTitle;
+        description = translatedDesc;
+      }
+      
       articles.push({
         title,
         link,
@@ -124,5 +159,5 @@ function parseRSS(xmlText: string): RSSArticle[] {
     }
   }
   
-  return articles.slice(0, 20); // Ограничиваем до 20 новостей
+  return articles.slice(0, 20);
 }
