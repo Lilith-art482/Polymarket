@@ -16,7 +16,10 @@ export interface NewsArticle {
 }
 
 export async function GET() {
+  console.log('GNEWS_TOKEN:', GNEWS_TOKEN ? 'present' : 'missing');
+  
   if (!GNEWS_TOKEN) {
+    console.error('GNEWS_TOKEN is not configured');
     return NextResponse.json(
       { error: 'GNEWS_TOKEN not configured' },
       { status: 500 }
